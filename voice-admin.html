@@ -713,15 +713,41 @@ async function startSession() {
     return;
   }
   const ai = new GoogleGenAI({ apiKey: CONFIG.geminiApiKey });
+  let sessionReady = false;
 
   try {
     setStatus('thinking', 'INITIALISING SYSTEMS...');
     mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
+    // Set up audio pipeline first (but don't start sending until session is ready)
+    audioContext = new AudioContext({ sampleRate: 16000 });
+    const source = audioContext.createMediaStreamSource(mediaStream);
+    const processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+    processor.onaudioprocess = (e) => {
+      if (!session || !sessionReady) return;
+      const float32 = e.inputBuffer.getChannelData(0);
+      const int16 = new Int16Array(float32.length);
+      for (let i = 0; i < float32.length; i++) {
+        int16[i] = Math.max(-32768, Math.min(32767, float32[i] * 32768));
+      }
+      const b64 = btoa(String.fromCharCode(...new Uint8Array(int16.buffer)));
+      try {
+        session.sendRealtimeInput({
+          audio: { data: b64, mimeType: 'audio/pcm;rate=16000' }
+        });
+      } catch (e) { /* session closed mid-send, ignore */ }
+    };
+
+    source.connect(processor);
+    processor.connect(audioContext.destination);
+
     session = await ai.live.connect({
       model: 'gemini-2.5-flash-native-audio-latest',
       callbacks: {
         onopen: () => {
+          sessionReady = true;
+          isListening = true;
           setStatus('listening', 'AWAITING YOUR COMMAND, SIR');
           arcIcon.textContent = '◉';
         },
@@ -735,13 +761,15 @@ async function startSession() {
               if (part.functionCall) {
                 setStatus('thinking', `EXECUTING ${part.functionCall.name.toUpperCase().replace(/_/g,' ')}...`);
                 const result = await handleFunctionCall(part.functionCall.name, part.functionCall.args || {});
-                await session.sendToolResponse({
-                  functionResponses: [{
-                    id:       part.functionCall.id,
-                    name:     part.functionCall.name,
-                    response: result,
-                  }]
-                });
+                try {
+                  await session.sendToolResponse({
+                    functionResponses: [{
+                      id:       part.functionCall.id,
+                      name:     part.functionCall.name,
+                      response: result,
+                    }]
+                  });
+                } catch(e) { /* session closed */ }
               }
             }
           }
@@ -757,37 +785,16 @@ async function startSession() {
           stopSession();
         },
         onclose: () => {
+          sessionReady = false;
           if (isListening) stopSession();
         },
       },
       config: {
         responseModalities: ['AUDIO', 'TEXT'],
-        systemInstruction: SYSTEM_PROMPT,
+        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
         tools: [{ functionDeclarations: FUNCTION_DECLARATIONS }],
       },
     });
-
-    // Stream mic audio to Gemini (PCM 16kHz)
-    audioContext = new AudioContext({ sampleRate: 16000 });
-    const source = audioContext.createMediaStreamSource(mediaStream);
-    const processor = audioContext.createScriptProcessor(4096, 1, 1);
-
-    processor.onaudioprocess = (e) => {
-      if (!session) return;
-      const float32 = e.inputBuffer.getChannelData(0);
-      const int16 = new Int16Array(float32.length);
-      for (let i = 0; i < float32.length; i++) {
-        int16[i] = Math.max(-32768, Math.min(32767, float32[i] * 32768));
-      }
-      session.sendRealtimeInput({
-        audio: { data: btoa(String.fromCharCode(...new Uint8Array(int16.buffer))), mimeType: 'audio/pcm;rate=16000' }
-      });
-    };
-
-    source.connect(processor);
-    processor.connect(audioContext.destination);
-
-    isListening = true;
 
   } catch (err) {
     showError('INITIALISATION FAILED: ' + err.message);
