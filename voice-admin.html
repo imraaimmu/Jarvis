@@ -331,13 +331,12 @@
   </div>
 
   <div class="config-panel" id="configPanel">
-    <label>Gemini API Key</label>
-    <input type="password" id="geminiKey" placeholder="AIza..." autocomplete="off">
     <label>Admin Voice Token</label>
     <input type="password" id="voiceToken" placeholder="Bearer token from .env" autocomplete="off">
     <label>API Base URL</label>
     <input type="text" id="apiBase" value="https://staging.kukoo.in/api/admin/voice">
-    <button class="save-btn" id="saveConfig">SAVE CREDENTIALS</button>
+    <button class="save-btn" id="saveConfig">CONNECT TO JARVIS</button>
+    <div id="configStatus" style="margin-top:8px;font-size:0.8rem;color:var(--blue-dim);text-align:center;"></div>
   </div>
 
   <div class="error-msg" id="errorMsg"></div>
@@ -347,25 +346,48 @@
 <script type="module">
 import { GoogleGenAI, Modality } from 'https://esm.run/@google/genai';
 
-// ─── CONFIG (persisted in sessionStorage) ─────────────────────────────────────
+// ─── CONFIG (voice token + base URL in sessionStorage; Gemini key fetched from server) ──
 const CONFIG = {
   get geminiApiKey()    { return sessionStorage.getItem('jarvis_gemini_key') || ''; },
+  set geminiApiKey(v)   { sessionStorage.setItem('jarvis_gemini_key', v); },
   get adminVoiceToken() { return sessionStorage.getItem('jarvis_voice_token') || ''; },
   get adminApiBase()    { return sessionStorage.getItem('jarvis_api_base') || 'https://staging.kukoo.in/api/admin/voice'; },
 };
 
 // Restore saved config
-document.getElementById('geminiKey').value = CONFIG.geminiApiKey;
 document.getElementById('voiceToken').value = CONFIG.adminVoiceToken;
 document.getElementById('apiBase').value = CONFIG.adminApiBase;
 
-document.getElementById('saveConfig').addEventListener('click', () => {
-  sessionStorage.setItem('jarvis_gemini_key',    document.getElementById('geminiKey').value.trim());
-  sessionStorage.setItem('jarvis_voice_token',   document.getElementById('voiceToken').value.trim());
-  sessionStorage.setItem('jarvis_api_base',      document.getElementById('apiBase').value.trim());
-  document.getElementById('configPanel').style.display = 'none';
-  showError('');
-  responseEl.textContent = 'Credentials saved, sir. Ready when you are.';
+document.getElementById('saveConfig').addEventListener('click', async () => {
+  const token = document.getElementById('voiceToken').value.trim();
+  const base  = document.getElementById('apiBase').value.trim();
+  if (!token) { showError('Voice token is required, sir.'); return; }
+
+  sessionStorage.setItem('jarvis_voice_token', token);
+  sessionStorage.setItem('jarvis_api_base',    base);
+
+  const statusEl = document.getElementById('configStatus');
+  statusEl.textContent = 'Fetching Gemini key from server…';
+
+  try {
+    const res = await fetch(base + '/config', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const json = await res.json();
+    if (!res.ok || !json.data?.gemini_api_key) {
+      statusEl.textContent = '';
+      showError(json.message || 'Could not fetch Gemini key. Check the token and API base.');
+      return;
+    }
+    CONFIG.geminiApiKey = json.data.gemini_api_key;
+    statusEl.textContent = '';
+    document.getElementById('configPanel').style.display = 'none';
+    showError('');
+    responseEl.textContent = 'Online and ready, sir. Systems nominal.';
+  } catch (e) {
+    statusEl.textContent = '';
+    showError('Network error reaching the server: ' + e.message);
+  }
 });
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
@@ -680,17 +702,17 @@ Current date: ${new Date().toLocaleDateString('en-IN', { weekday:'long', day:'nu
 Platform: Kukoo multivendor food & grocery delivery, staging environment.`;
 
 // ─── GEMINI LIVE SESSION ──────────────────────────────────────────────────────
-const ai = new GoogleGenAI({ apiKey: CONFIG.geminiApiKey });
-
+// ai is instantiated per-session so it always uses the latest fetched key
 async function startSession() {
-  if (!CONFIG.geminiApiKey) {
-    showError('GEMINI API KEY NOT SET — expand config panel below');
-    return;
-  }
   if (!CONFIG.adminVoiceToken) {
     showError('ADMIN VOICE TOKEN NOT SET — expand config panel below');
     return;
   }
+  if (!CONFIG.geminiApiKey) {
+    showError('GEMINI KEY NOT LOADED — please save your voice token first');
+    return;
+  }
+  const ai = new GoogleGenAI({ apiKey: CONFIG.geminiApiKey });
 
   try {
     setStatus('thinking', 'INITIALISING SYSTEMS...');
@@ -781,9 +803,20 @@ arcBtn.addEventListener('click', () => {
   isListening ? stopSession() : startSession();
 });
 
-// Hide config panel if credentials already saved
-if (CONFIG.geminiApiKey && CONFIG.adminVoiceToken) {
+// Hide config panel if voice token already saved; Gemini key is always fetched from server
+if (CONFIG.adminVoiceToken) {
   document.getElementById('configPanel').style.display = 'none';
+  // Re-fetch Gemini key silently in the background on page reload
+  fetch(CONFIG.adminApiBase + '/config', {
+    headers: { 'Authorization': `Bearer ${CONFIG.adminVoiceToken}` }
+  }).then(r => r.json()).then(json => {
+    if (json.data?.gemini_api_key) {
+      CONFIG.geminiApiKey = json.data.gemini_api_key;
+      responseEl.textContent = 'All systems online, sir. Ready for your command.';
+    } else {
+      showError('Could not load Gemini key from server — check admin settings.');
+    }
+  }).catch(() => showError('Network error fetching Gemini config from server.'));
 }
 </script>
 </body>
