@@ -1001,15 +1001,7 @@ async function startSession() {
             }
           }
 
-          // Fallback: some SDK versions deliver audio via msg.data (raw WebSocket pattern)
-          if (msg.data) {
-            isSpeaking = true;
-            if (micGainNode) micGainNode.gain.setTargetAtTime(0, audioContext.currentTime, 0.01);
-            setStatus('speaking', 'J.A.R.V.I.S SPEAKING');
-            playPcm16(msg.data, 24000);
-            clearTimeout(isSpeakingTimeout);
-            isSpeakingTimeout = setTimeout(() => { isSpeaking = false; if (micGainNode) micGainNode.gain.setTargetAtTime(1, audioContext.currentTime, 0.05); }, 60000);
-          }
+          // msg.data fallback removed — inlineData path is active; both firing caused double audio
 
           // Handle function calls separately — process in parallel, send all responses together
           const functionCallParts = parts.filter(p => p.functionCall);
