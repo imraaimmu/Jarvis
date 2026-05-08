@@ -792,16 +792,16 @@ async function startSession() {
           }, 200);
         },
         onmessage: async (msg) => {
+          // Primary audio path — all Gemini audio (including tool call responses) comes here
+          if (msg.data) {
+            isSpeaking = true;
+            setStatus('speaking', 'J.A.R.V.I.S SPEAKING');
+            playPcm16(msg.data, 24000);
+          }
           if (msg.serverContent?.modelTurn?.parts) {
             for (const part of msg.serverContent.modelTurn.parts) {
               if (part.text) {
                 responseEl.textContent = part.text;
-                setStatus('speaking', 'J.A.R.V.I.S SPEAKING');
-              }
-              if (part.inlineData?.mimeType?.startsWith('audio/')) {
-                isSpeaking = true;
-                setStatus('speaking', 'J.A.R.V.I.S SPEAKING');
-                playPcm16(part.inlineData.data, 24000);
               }
               if (part.functionCall) {
                 setStatus('thinking', `EXECUTING ${part.functionCall.name.toUpperCase().replace(/_/g,' ')}...`);
