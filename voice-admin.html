@@ -950,7 +950,7 @@ async function startSession() {
       const b64 = btoa(bin);
       try {
         session.sendRealtimeInput({
-          audio: { data: b64, mimeType: 'audio/pcm;rate=16000' }
+          media: { data: b64, mimeType: 'audio/pcm;rate=16000' }
         });
       } catch (e) { /* session closed mid-send, ignore */ }
     };
@@ -966,7 +966,7 @@ async function startSession() {
     nextPlayTime = 0;
 
     session = await ai.live.connect({
-      model: 'gemini-3.1-flash-live-preview',
+      model: 'gemini-live-2.5-flash-preview',
       callbacks: {
         onopen: () => {
           sessionReady = true;
