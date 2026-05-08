@@ -344,7 +344,7 @@
 </div>
 
 <script type="module">
-import { GoogleGenAI, Modality } from 'https://esm.run/@google/genai';
+import { GoogleGenAI } from 'https://esm.run/@google/genai';
 
 // ─── CONFIG (voice token + base URL in sessionStorage; Gemini key fetched from server) ──
 const CONFIG = {
@@ -719,9 +719,9 @@ async function startSession() {
     mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
     session = await ai.live.connect({
-      model: 'gemini-2.0-flash-live',
+      model: 'gemini-2.5-flash-native-audio-latest',
       config: {
-        responseModalities: [Modality.AUDIO, Modality.TEXT],
+        responseModalities: ['AUDIO', 'TEXT'],
         systemInstruction: SYSTEM_PROMPT,
         tools: [{ functionDeclarations: FUNCTION_DECLARATIONS }],
       },
