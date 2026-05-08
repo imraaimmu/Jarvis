@@ -950,7 +950,7 @@ async function startSession() {
       const b64 = btoa(bin);
       try {
         session.sendRealtimeInput({
-          media: { data: b64, mimeType: 'audio/pcm;rate=16000' }
+          audio: { data: b64, mimeType: 'audio/pcm;rate=16000' }
         });
       } catch (e) { /* session closed mid-send, ignore */ }
     };
