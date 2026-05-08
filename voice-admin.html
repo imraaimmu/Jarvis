@@ -433,9 +433,18 @@ async function fetchAdmin(method, path, body = null, isFormData = false) {
   if (!isFormData && body) headers['Content-Type'] = 'application/json';
   const opts = { method, headers };
   if (body) opts.body = isFormData ? body : JSON.stringify(body);
-  const res = await fetch(CONFIG.adminApiBase + path, opts);
-  logApi(method, path, res.ok);
-  return res.json();
+  try {
+    const res = await fetch(CONFIG.adminApiBase + path, opts);
+    logApi(method, path, res.ok);
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { error: `Non-JSON response (HTTP ${res.status})`, preview: text.slice(0, 200) };
+    }
+  } catch(e) {
+    return { error: 'Network error: ' + e.message };
+  }
 }
 
 // ─── IMAGE DROP ZONE ─────────────────────────────────────────────────────────
@@ -796,13 +805,18 @@ async function startSession() {
               }
               if (part.functionCall) {
                 setStatus('thinking', `EXECUTING ${part.functionCall.name.toUpperCase().replace(/_/g,' ')}...`);
-                const result = await handleFunctionCall(part.functionCall.name, part.functionCall.args || {});
+                let result;
+                try {
+                  result = await handleFunctionCall(part.functionCall.name, part.functionCall.args || {});
+                } catch(e) {
+                  result = { error: e.message || 'API call failed' };
+                }
                 try {
                   await session.sendToolResponse({
                     functionResponses: [{
                       id:       part.functionCall.id,
                       name:     part.functionCall.name,
-                      response: result,
+                      response: { output: result },
                     }]
                   });
                 } catch(e) { /* session closed */ }
