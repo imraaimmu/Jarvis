@@ -334,7 +334,7 @@
     <label>Admin Voice Token</label>
     <input type="password" id="voiceToken" placeholder="Bearer token from .env" autocomplete="off">
     <label>API Base URL</label>
-    <input type="text" id="apiBase" value="https://staging.kukoo.in/api/admin/voice">
+    <input type="text" id="apiBase" value="https://staging.kukoo.in/api/v1/admin/voice">
     <button class="save-btn" id="saveConfig">CONNECT TO JARVIS</button>
     <div id="configStatus" style="margin-top:8px;font-size:0.8rem;color:var(--blue-dim);text-align:center;"></div>
   </div>
@@ -351,7 +351,7 @@ const CONFIG = {
   get geminiApiKey()    { return sessionStorage.getItem('jarvis_gemini_key') || ''; },
   set geminiApiKey(v)   { sessionStorage.setItem('jarvis_gemini_key', v); },
   get adminVoiceToken() { return sessionStorage.getItem('jarvis_voice_token') || ''; },
-  get adminApiBase()    { return sessionStorage.getItem('jarvis_api_base') || 'https://staging.kukoo.in/api/admin/voice'; },
+  get adminApiBase()    { return sessionStorage.getItem('jarvis_api_base') || 'https://staging.kukoo.in/api/v1/admin/voice'; },
 };
 
 // Restore saved config
