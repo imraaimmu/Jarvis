@@ -395,6 +395,7 @@ let session       = null;
 let mediaStream   = null;
 let audioContext  = null;
 let isListening   = false;
+let isSpeaking    = false;
 let pendingImage  = null;
 let activeChannels = ['whatsapp', 'push'];
 
@@ -748,7 +749,7 @@ async function startSession() {
     const processor = audioContext.createScriptProcessor(4096, 1, 1);
 
     processor.onaudioprocess = (e) => {
-      if (!session || !sessionReady) return;
+      if (!session || !sessionReady || isSpeaking) return;
       const float32 = e.inputBuffer.getChannelData(0);
       const int16 = new Int16Array(float32.length);
       for (let i = 0; i < float32.length; i++) {
@@ -782,11 +783,6 @@ async function startSession() {
           }, 200);
         },
         onmessage: async (msg) => {
-          // Play audio response from Gemini
-          if (msg.data) {
-            playPcm16(msg.data, 24000);
-            setStatus('speaking', 'J.A.R.V.I.S SPEAKING');
-          }
           if (msg.serverContent?.modelTurn?.parts) {
             for (const part of msg.serverContent.modelTurn.parts) {
               if (part.text) {
@@ -794,6 +790,8 @@ async function startSession() {
                 setStatus('speaking', 'J.A.R.V.I.S SPEAKING');
               }
               if (part.inlineData?.mimeType?.startsWith('audio/')) {
+                isSpeaking = true;
+                setStatus('speaking', 'J.A.R.V.I.S SPEAKING');
                 playPcm16(part.inlineData.data, 24000);
               }
               if (part.functionCall) {
@@ -815,6 +813,7 @@ async function startSession() {
             transcriptEl.textContent = msg.serverContent.inputTranscription.text;
           }
           if (msg.serverContent?.turnComplete) {
+            isSpeaking = false;
             setStatus('listening', 'AWAITING YOUR COMMAND, SIR');
           }
         },
@@ -850,6 +849,7 @@ function stopSession() {
   if (playbackContext) { try { playbackContext.close(); } catch(e) {} playbackContext = null; }
   playbackQueue = Promise.resolve();
   isListening = false;
+  isSpeaking = false;
   setStatus('', 'SYSTEMS STANDBY');
   arcIcon.textContent = '⬡';
 }
