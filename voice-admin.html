@@ -743,7 +743,7 @@ async function startSession() {
     processor.connect(audioContext.destination);
 
     session = await ai.live.connect({
-      model: 'gemini-2.5-flash-native-audio-latest',
+      model: 'gemini-3.1-flash-live-preview',
       callbacks: {
         onopen: () => {
           sessionReady = true;
@@ -791,9 +791,11 @@ async function startSession() {
           showError('SYSTEM ERROR: ' + (err.message || JSON.stringify(err)));
           stopSession();
         },
-        onclose: () => {
+        onclose: (event) => {
           sessionReady = false;
-          if (isListening) stopSession();
+          const reason = event?.reason || event?.code || 'unknown';
+          if (isListening) showError('SESSION CLOSED: code=' + (event?.code) + ' reason=' + (event?.reason || 'none'));
+          stopSession();
         },
       },
       config: {
