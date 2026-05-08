@@ -750,11 +750,13 @@ async function startSession() {
           isListening = true;
           setStatus('speaking', 'J.A.R.V.I.S ONLINE');
           arcIcon.textContent = '◉';
-          // Jarvis greets first
-          session.sendClientContent({
-            turns: [{ role: 'user', parts: [{ text: 'Greet me and let me know you are online and ready.' }] }],
-            turnComplete: true,
-          });
+          // Defer greeting so await ai.live.connect() assignment completes first
+          setTimeout(() => {
+            if (session) session.sendClientContent({
+              turns: [{ role: 'user', parts: [{ text: 'Greet me and let me know you are online and ready.' }] }],
+              turnComplete: true,
+            });
+          }, 200);
         },
         onmessage: async (msg) => {
           if (msg.serverContent?.modelTurn?.parts) {
