@@ -701,6 +701,29 @@ CAPABILITIES: You have access to 96 admin operations — orders, stores, items, 
 Current date: ${new Date().toLocaleDateString('en-IN', { weekday:'long', day:'numeric', month:'long', year:'numeric' })}.
 Platform: Kukoo multivendor food & grocery delivery, staging environment.`;
 
+// ─── AUDIO PLAYBACK ───────────────────────────────────────────────────────────
+let playbackContext = null;
+let playbackQueue = Promise.resolve();
+
+function playPcm16(base64, sampleRate = 24000) {
+  playbackQueue = playbackQueue.then(async () => {
+    if (!playbackContext) return;
+    const raw = atob(base64);
+    const int16 = new Int16Array(raw.length / 2);
+    for (let i = 0; i < int16.length; i++) {
+      int16[i] = (raw.charCodeAt(i * 2)) | (raw.charCodeAt(i * 2 + 1) << 8);
+    }
+    const float32 = new Float32Array(int16.length);
+    for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768;
+    const buffer = playbackContext.createBuffer(1, float32.length, sampleRate);
+    buffer.copyToChannel(float32, 0);
+    const src = playbackContext.createBufferSource();
+    src.buffer = buffer;
+    src.connect(playbackContext.destination);
+    return new Promise(resolve => { src.onended = resolve; src.start(); });
+  });
+}
+
 // ─── GEMINI LIVE SESSION ──────────────────────────────────────────────────────
 // ai is instantiated per-session so it always uses the latest fetched key
 async function startSession() {
@@ -748,9 +771,9 @@ async function startSession() {
         onopen: () => {
           sessionReady = true;
           isListening = true;
+          playbackContext = new AudioContext({ sampleRate: 24000 });
           setStatus('speaking', 'J.A.R.V.I.S ONLINE');
           arcIcon.textContent = '◉';
-          // Defer greeting so await ai.live.connect() assignment completes first
           setTimeout(() => {
             if (session) session.sendClientContent({
               turns: [{ role: 'user', parts: [{ text: 'Greet me and let me know you are online and ready.' }] }],
@@ -759,11 +782,19 @@ async function startSession() {
           }, 200);
         },
         onmessage: async (msg) => {
+          // Play audio response from Gemini
+          if (msg.data) {
+            playPcm16(msg.data, 24000);
+            setStatus('speaking', 'J.A.R.V.I.S SPEAKING');
+          }
           if (msg.serverContent?.modelTurn?.parts) {
             for (const part of msg.serverContent.modelTurn.parts) {
               if (part.text) {
                 responseEl.textContent = part.text;
                 setStatus('speaking', 'J.A.R.V.I.S SPEAKING');
+              }
+              if (part.inlineData?.mimeType?.startsWith('audio/')) {
+                playPcm16(part.inlineData.data, 24000);
               }
               if (part.functionCall) {
                 setStatus('thinking', `EXECUTING ${part.functionCall.name.toUpperCase().replace(/_/g,' ')}...`);
@@ -799,9 +830,10 @@ async function startSession() {
         },
       },
       config: {
-        responseModalities: ['AUDIO', 'TEXT'],
+        responseModalities: ['AUDIO'],
         systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
         tools: [{ functionDeclarations: FUNCTION_DECLARATIONS }],
+        inputAudioTranscription: {},
       },
     });
 
@@ -815,6 +847,8 @@ function stopSession() {
   if (session) { try { session.close(); } catch(e) {} session = null; }
   if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
   if (audioContext) { try { audioContext.close(); } catch(e) {} audioContext = null; }
+  if (playbackContext) { try { playbackContext.close(); } catch(e) {} playbackContext = null; }
+  playbackQueue = Promise.resolve();
   isListening = false;
   setStatus('', 'SYSTEMS STANDBY');
   arcIcon.textContent = '⬡';
