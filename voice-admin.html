@@ -748,8 +748,13 @@ async function startSession() {
         onopen: () => {
           sessionReady = true;
           isListening = true;
-          setStatus('listening', 'AWAITING YOUR COMMAND, SIR');
+          setStatus('speaking', 'J.A.R.V.I.S ONLINE');
           arcIcon.textContent = '◉';
+          // Jarvis greets first
+          session.sendClientContent({
+            turns: [{ role: 'user', parts: [{ text: 'Greet me and let me know you are online and ready.' }] }],
+            turnComplete: true,
+          });
         },
         onmessage: async (msg) => {
           if (msg.serverContent?.modelTurn?.parts) {
