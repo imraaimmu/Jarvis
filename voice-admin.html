@@ -985,6 +985,8 @@ async function startSession() {
           }, 500);
         },
         onmessage: async (msg) => {
+          // DEBUG: log full message structure
+          console.log('[JARVIS MSG]', JSON.stringify(msg).slice(0, 400));
           // Handle model turn parts (audio, text, function calls)
           const parts = msg.serverContent?.modelTurn?.parts ?? [];
           for (const part of parts) {
