@@ -720,44 +720,51 @@ async function startSession() {
 
     session = await ai.live.connect({
       model: 'gemini-2.5-flash-native-audio-latest',
+      callbacks: {
+        onopen: () => {
+          setStatus('listening', 'AWAITING YOUR COMMAND, SIR');
+          arcIcon.textContent = '◉';
+        },
+        onmessage: async (msg) => {
+          if (msg.serverContent?.modelTurn?.parts) {
+            for (const part of msg.serverContent.modelTurn.parts) {
+              if (part.text) {
+                responseEl.textContent = part.text;
+                setStatus('speaking', 'J.A.R.V.I.S SPEAKING');
+              }
+              if (part.functionCall) {
+                setStatus('thinking', `EXECUTING ${part.functionCall.name.toUpperCase().replace(/_/g,' ')}...`);
+                const result = await handleFunctionCall(part.functionCall.name, part.functionCall.args || {});
+                await session.sendToolResponse({
+                  functionResponses: [{
+                    id:       part.functionCall.id,
+                    name:     part.functionCall.name,
+                    response: result,
+                  }]
+                });
+              }
+            }
+          }
+          if (msg.serverContent?.inputTranscription?.text) {
+            transcriptEl.textContent = msg.serverContent.inputTranscription.text;
+          }
+          if (msg.serverContent?.turnComplete) {
+            setStatus('listening', 'AWAITING YOUR COMMAND, SIR');
+          }
+        },
+        onerror: (err) => {
+          showError('SYSTEM ERROR: ' + (err.message || JSON.stringify(err)));
+          stopSession();
+        },
+        onclose: () => {
+          if (isListening) stopSession();
+        },
+      },
       config: {
         responseModalities: ['AUDIO', 'TEXT'],
         systemInstruction: SYSTEM_PROMPT,
         tools: [{ functionDeclarations: FUNCTION_DECLARATIONS }],
       },
-    });
-
-    session.on('message', async (msg) => {
-      if (msg.serverContent?.modelTurn?.parts) {
-        for (const part of msg.serverContent.modelTurn.parts) {
-          if (part.text) {
-            responseEl.textContent = part.text;
-            setStatus('speaking', 'J.A.R.V.I.S SPEAKING');
-          }
-          if (part.functionCall) {
-            setStatus('thinking', `EXECUTING ${part.functionCall.name.toUpperCase().replace(/_/g,' ')}...`);
-            const result = await handleFunctionCall(part.functionCall.name, part.functionCall.args || {});
-            await session.sendToolResponse({
-              functionResponses: [{
-                id:       part.functionCall.id,
-                name:     part.functionCall.name,
-                response: result,
-              }]
-            });
-          }
-        }
-      }
-      if (msg.serverContent?.inputTranscription?.text) {
-        transcriptEl.textContent = msg.serverContent.inputTranscription.text;
-      }
-      if (msg.serverContent?.turnComplete) {
-        setStatus('listening', 'AWAITING YOUR COMMAND, SIR');
-      }
-    });
-
-    session.on('error', (err) => {
-      showError('SYSTEM ERROR: ' + err.message);
-      stopSession();
     });
 
     // Stream mic audio to Gemini (PCM 16kHz)
@@ -781,8 +788,6 @@ async function startSession() {
     processor.connect(audioContext.destination);
 
     isListening = true;
-    setStatus('listening', 'AWAITING YOUR COMMAND, SIR');
-    arcIcon.textContent = '◉';
 
   } catch (err) {
     showError('INITIALISATION FAILED: ' + err.message);
