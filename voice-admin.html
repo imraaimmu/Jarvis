@@ -276,6 +276,58 @@
 
   .error-msg { color: var(--red); font-size: 0.8rem; min-height: 18px; text-align: center; width: 100%; }
 
+  /* Safety lock button */
+  .safety-lock {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: 1px solid;
+    cursor: pointer;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    transition: all 0.25s;
+    background: transparent;
+    width: 100%;
+    justify-content: center;
+  }
+  .safety-lock.locked {
+    border-color: var(--red);
+    color: var(--red);
+    box-shadow: 0 0 12px rgba(255,51,51,0.2);
+  }
+  .safety-lock.unlocked {
+    border-color: var(--green);
+    color: var(--green);
+    box-shadow: 0 0 12px rgba(0,255,136,0.2);
+  }
+  .safety-lock-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .safety-lock.locked .safety-lock-indicator { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .safety-lock.unlocked .safety-lock-indicator { background: var(--green); box-shadow: 0 0 6px var(--green); }
+
+  .readonly-banner {
+    width: 100%;
+    background: rgba(255,51,51,0.1);
+    border: 1px solid rgba(255,51,51,0.3);
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.6rem;
+    letter-spacing: 0.15em;
+    color: var(--red);
+    text-align: center;
+    display: none;
+  }
+  .readonly-banner.visible { display: block; }
+
   /* Scanline effect */
   body::after {
     content: '';
@@ -330,11 +382,18 @@
     <span class="channel-chip" data-channel="email">Email</span>
   </div>
 
+  <div class="readonly-banner" id="readonlyBanner">⚠ SAFETY LOCK ENGAGED — READ-ONLY MODE ACTIVE</div>
+
+  <button class="safety-lock unlocked" id="safetyLockBtn">
+    <span class="safety-lock-indicator"></span>
+    <span id="safetyLockText">SAFETY LOCK: DISENGAGED</span>
+  </button>
+
   <div class="config-panel" id="configPanel">
     <label>Admin Voice Token</label>
     <input type="password" id="voiceToken" placeholder="Bearer token from .env" autocomplete="off">
     <label>API Base URL</label>
-    <input type="text" id="apiBase" value="https://staging.kukoo.in/api/v1/admin/voice">
+    <input type="text" id="apiBase" value="https://staging.kukoo.in/api/admin/voice">
     <button class="save-btn" id="saveConfig">CONNECT TO JARVIS</button>
     <div id="configStatus" style="margin-top:8px;font-size:0.8rem;color:var(--blue-dim);text-align:center;"></div>
   </div>
@@ -346,12 +405,14 @@
 <script type="module">
 import { GoogleGenAI } from 'https://esm.run/@google/genai';
 
-// ─── CONFIG (voice token + base URL in sessionStorage; Gemini key fetched from server) ──
+// ─── CONFIG (voice token + base URL in sessionStorage; Gemini key in memory only) ──
+let _geminiApiKey = '';  // never persisted — re-fetched from server on each page load
+
 const CONFIG = {
-  get geminiApiKey()    { return sessionStorage.getItem('jarvis_gemini_key') || ''; },
-  set geminiApiKey(v)   { sessionStorage.setItem('jarvis_gemini_key', v); },
+  get geminiApiKey()    { return _geminiApiKey; },
+  set geminiApiKey(v)   { _geminiApiKey = v; },
   get adminVoiceToken() { return sessionStorage.getItem('jarvis_voice_token') || ''; },
-  get adminApiBase()    { return sessionStorage.getItem('jarvis_api_base') || 'https://staging.kukoo.in/api/v1/admin/voice'; },
+  get adminApiBase()    { return sessionStorage.getItem('jarvis_api_base') || 'https://staging.kukoo.in/api/admin/voice'; },
 };
 
 // Restore saved config
@@ -391,13 +452,17 @@ document.getElementById('saveConfig').addEventListener('click', async () => {
 });
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
-let session       = null;
-let mediaStream   = null;
-let audioContext  = null;
-let isListening   = false;
-let isSpeaking    = false;
-let pendingImage  = null;
-let activeChannels = ['whatsapp', 'push'];
+let session           = null;
+let mediaStream       = null;
+let audioContext      = null;
+let isListening       = false;
+let isSpeaking        = false;
+let isSpeakingTimeout = null;
+let pendingImage      = null;
+let activeChannels    = ['whatsapp', 'push'];
+let isConnecting      = false;
+let reconnectAttempts = 0;
+let isReadOnly        = sessionStorage.getItem('jarvis_readonly') === 'true';
 
 // ─── UI REFS ──────────────────────────────────────────────────────────────────
 const arcBtn       = document.getElementById('arcBtn');
@@ -422,9 +487,9 @@ function logApi(method, path, ok) {
   apiLogEl.textContent = `${ok ? '✓' : '✗'} ${method} /...${path.slice(-40)}`;
 }
 
-function showError(msg) {
+function showError(msg, persistent = false) {
   errorEl.textContent = msg;
-  if (msg) setTimeout(() => errorEl.textContent = '', 6000);
+  if (msg && !persistent) setTimeout(() => { if (errorEl.textContent === msg) errorEl.textContent = ''; }, 6000);
 }
 
 // ─── API HELPER ──────────────────────────────────────────────────────────────
@@ -456,10 +521,26 @@ imageInput.addEventListener('change', e => handleImageFile(e.target.files[0]));
 
 function handleImageFile(file) {
   if (!file) return;
+  const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+  const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+  if (!ALLOWED_TYPES.includes(file.type)) {
+    showError('Invalid file type. Use JPEG, PNG, WebP, or GIF, sir.');
+    return;
+  }
+  if (file.size > MAX_SIZE) {
+    showError('Image too large. Maximum 5MB, sir.');
+    return;
+  }
   pendingImage = file;
   const reader = new FileReader();
   reader.onload = e => {
-    document.getElementById('imagePreview').innerHTML = `<img src="${e.target.result}"><br><small>IMAGE LOCKED</small>`;
+    const previewEl = document.getElementById('imagePreview');
+    previewEl.replaceChildren();
+    const img = document.createElement('img');
+    img.src = e.target.result;
+    const label = document.createElement('small');
+    label.textContent = 'IMAGE LOCKED';
+    previewEl.append(img, document.createElement('br'), label);
     dropZone.classList.add('has-image');
   };
   reader.readAsDataURL(file);
@@ -475,6 +556,44 @@ document.querySelectorAll('.channel-chip').forEach(chip => {
       : [...activeChannels, ch];
   });
 });
+
+// ─── SAFETY LOCK (READ-ONLY MODE) ────────────────────────────────────────────
+const safetyLockBtn  = document.getElementById('safetyLockBtn');
+const readonlyBanner = document.getElementById('readonlyBanner');
+
+function updateSafetyLockUI() {
+  const lockText = document.getElementById('safetyLockText');
+  if (isReadOnly) {
+    safetyLockBtn.className = 'safety-lock locked';
+    lockText.textContent = 'SAFETY LOCK: ENGAGED';
+    readonlyBanner.classList.add('visible');
+  } else {
+    safetyLockBtn.className = 'safety-lock unlocked';
+    lockText.textContent = 'SAFETY LOCK: DISENGAGED';
+    readonlyBanner.classList.remove('visible');
+  }
+}
+
+safetyLockBtn.addEventListener('click', () => {
+  isReadOnly = !isReadOnly;
+  sessionStorage.setItem('jarvis_readonly', isReadOnly);
+  updateSafetyLockUI();
+  // Inform Jarvis of the mode change via text injection
+  if (session) {
+    try {
+      session.sendClientContent({
+        turns: [{ role: 'user', parts: [{ text: isReadOnly
+          ? 'Safety lock has been engaged. You are now in read-only mode. Acknowledge and inform me that write operations are disabled.'
+          : 'Safety lock has been disengaged. You are now in full-control mode. Acknowledge and confirm write operations are enabled.'
+        }] }],
+        turnComplete: true,
+      });
+    } catch(e) { /* session not active */ }
+  }
+});
+
+// Apply initial UI state on load
+updateSafetyLockUI();
 
 // ─── FUNCTION DECLARATIONS ───────────────────────────────────────────────────
 const FUNCTION_DECLARATIONS = [
@@ -577,8 +696,25 @@ const FUNCTION_DECLARATIONS = [
   }, required: ['title','body'] } },
 ];
 
+// ─── READ-ONLY SAFE FUNCTIONS ─────────────────────────────────────────────────
+const READONLY_SAFE_FUNCTIONS = new Set([
+  'get_dashboard','get_earnings','get_top_items','get_store_ranking','get_top_delivery_man',
+  'get_expenses','list_orders','get_order','search_orders','list_refunds','list_stores',
+  'list_pending_stores','list_items','list_pending_items','list_categories',
+  'list_delivery_men','get_dm_reviews','get_dm_payout','search_customers',
+  'get_customer_orders','list_coupons','get_store_commission','get_store_payout',
+  'list_disbursements','list_store_withdrawals','list_dm_withdrawals','list_zones',
+  'list_surge_prices','list_campaigns','list_flash_sales','list_cashbacks',
+  'list_wallet_bonuses','list_advertisements','list_banners','list_subscription_packages',
+  'get_store_subscription','list_service_bookings','list_employees','list_roles',
+  'list_messages','get_conversation','count_segment',
+]);
+
 // ─── FUNCTION CALL HANDLER ───────────────────────────────────────────────────
 async function handleFunctionCall(name, args) {
+  if (isReadOnly && !READONLY_SAFE_FUNCTIONS.has(name)) {
+    return { error: 'SAFETY LOCK ENGAGED — read-only mode is active, sir. Disengage the safety lock to execute write operations.' };
+  }
   const r = args;
   switch (name) {
     case 'get_dashboard':          return fetchAdmin('GET', '/dashboard');
@@ -629,7 +765,16 @@ async function handleFunctionCall(name, args) {
     case 'toggle_coupon_status':   return fetchAdmin('POST', `/coupons/${r.id}/status`);
     case 'create_coupon_for_customer': {
       const result = await fetchAdmin('POST', '/coupons/create-for-customer', r);
-      if (result.data?.whatsapp_deeplink) window.open(result.data.whatsapp_deeplink, '_blank');
+      if (result.data?.whatsapp_deeplink) {
+        responseEl.innerHTML = '';
+        const link = document.createElement('a');
+        link.href = result.data.whatsapp_deeplink;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = '▶ OPEN WHATSAPP';
+        link.style.cssText = 'color:var(--green);font-family:Orbitron,sans-serif;font-size:0.7rem;letter-spacing:0.1em;display:block;margin-top:8px;';
+        responseEl.appendChild(link);
+      }
       return result;
     }
     case 'get_store_commission':        return fetchAdmin('GET', `/stores/${r.store_id}/commission`);
@@ -674,7 +819,7 @@ async function handleFunctionCall(name, args) {
     case 'reply_to_conversation':  return fetchAdmin('POST', `/messages/${r.conversation_id}/reply`, { message: r.message });
     case 'count_segment': return fetchAdmin('POST', '/campaign-launcher/segment-count', { segment: r.segment });
     case 'launch_campaign': {
-      const payload = { ...r, channels: activeChannels };
+      const payload = { ...r, channels: r.channels?.length ? r.channels : activeChannels };
       if (pendingImage) {
         const formData = new FormData();
         formData.append('image', pendingImage);
@@ -693,6 +838,12 @@ async function handleFunctionCall(name, args) {
 // ─── SYSTEM PROMPT (JARVIS PERSONA) ──────────────────────────────────────────
 const SYSTEM_PROMPT = `You are J.A.R.V.I.S — Just A Rather Very Intelligent System — the AI assistant for the Kukoo food delivery platform admin panel. You serve your operator with the precision, wit, and dry British elegance of Tony Stark's AI.
 
+CRITICAL — TOOL USE IS MANDATORY:
+- You have ZERO knowledge of live Kukoo data. You cannot know orders, stores, customers, items, zones, campaigns, or any platform state from training.
+- For EVERY question about orders, stores, items, delivery men, customers, zones, campaigns, payments, coupons, or any platform data — you MUST call the appropriate function FIRST. No exceptions.
+- Never answer data questions from memory or assumptions. If asked "how many orders", call get_dashboard. If asked about a store, call list_stores. Always call the function.
+- After you receive function results, summarise them conversationally. The data in the response is live and authoritative.
+
 PERSONA RULES (non-negotiable):
 - Always address the user as "sir"
 - Speak with calm authority and dry wit — never robotic, never verbose
@@ -706,42 +857,62 @@ PERSONA RULES (non-negotiable):
 - Never say "I cannot" — find a way or explain the constraint with class.
 - If you don't know an ID, ask. "Which store are you referring to, sir? I have several candidates."
 
-CAPABILITIES: You have access to 96 admin operations — orders, stores, items, delivery men, customers, zones, campaigns, payments, notifications, coupons, and a full campaign launcher that can fire banner + coupon + WhatsApp + push + Instagram in a single command.
+CAPABILITIES: You have 96 admin functions covering orders, stores, items, delivery men, customers, zones, campaigns, payments, notifications, coupons, and a full campaign launcher.
 
 Current date: ${new Date().toLocaleDateString('en-IN', { weekday:'long', day:'numeric', month:'long', year:'numeric' })}.
 Platform: Kukoo multivendor food & grocery delivery, staging environment.`;
 
 // ─── AUDIO PLAYBACK ───────────────────────────────────────────────────────────
 let playbackContext = null;
-let playbackQueue = Promise.resolve();
+let nextPlayTime    = 0;  // scheduled end-time of last queued chunk (AudioContext clock)
 
 function playPcm16(base64, sampleRate = 24000) {
-  playbackQueue = playbackQueue.then(async () => {
-    if (!playbackContext) return;
-    const raw = atob(base64);
-    const int16 = new Int16Array(raw.length / 2);
-    for (let i = 0; i < int16.length; i++) {
-      int16[i] = (raw.charCodeAt(i * 2)) | (raw.charCodeAt(i * 2 + 1) << 8);
-    }
-    const float32 = new Float32Array(int16.length);
-    for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768;
-    const buffer = playbackContext.createBuffer(1, float32.length, sampleRate);
-    buffer.copyToChannel(float32, 0);
-    const src = playbackContext.createBufferSource();
-    src.buffer = buffer;
-    src.connect(playbackContext.destination);
-    return new Promise(resolve => { src.onended = resolve; src.start(); });
-  });
+  if (!playbackContext) return;
+  if (playbackContext.state === 'suspended') playbackContext.resume();
+
+  const raw = atob(base64);
+  const int16 = new Int16Array(raw.length / 2);
+  for (let i = 0; i < int16.length; i++) {
+    int16[i] = (raw.charCodeAt(i * 2)) | (raw.charCodeAt(i * 2 + 1) << 8);
+  }
+  const float32 = new Float32Array(int16.length);
+  for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768;
+
+  const buffer = playbackContext.createBuffer(1, float32.length, sampleRate);
+  buffer.copyToChannel(float32, 0);
+  const src = playbackContext.createBufferSource();
+  src.buffer = buffer;
+  src.connect(playbackContext.destination);
+
+  // Schedule this chunk to start exactly when the previous one ends — gapless
+  const startAt = Math.max(playbackContext.currentTime, nextPlayTime);
+  src.start(startAt);
+  nextPlayTime = startAt + buffer.duration;
+}
+
+// Wait for all scheduled audio to finish, then un-mute mic
+async function waitForPlaybackThenUnmute() {
+  if (playbackContext && nextPlayTime > playbackContext.currentTime) {
+    const remainingMs = (nextPlayTime - playbackContext.currentTime) * 1000;
+    await new Promise(resolve => setTimeout(resolve, remainingMs + 80));
+  }
+  isSpeaking = false;
+  clearTimeout(isSpeakingTimeout);
+  setStatus('listening', 'AWAITING YOUR COMMAND, SIR');
 }
 
 // ─── GEMINI LIVE SESSION ──────────────────────────────────────────────────────
 // ai is instantiated per-session so it always uses the latest fetched key
 async function startSession() {
+  if (isConnecting) return;
+  isConnecting = true;
   if (!CONFIG.adminVoiceToken) {
+    isConnecting = false;
     showError('ADMIN VOICE TOKEN NOT SET — expand config panel below');
     return;
   }
   if (!CONFIG.geminiApiKey) {
+    isConnecting = false;
     showError('GEMINI KEY NOT LOADED — please save your voice token first');
     return;
   }
@@ -750,7 +921,9 @@ async function startSession() {
 
   try {
     setStatus('thinking', 'INITIALISING SYSTEMS...');
-    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+    });
 
     // Set up audio pipeline first (but don't start sending until session is ready)
     audioContext = new AudioContext({ sampleRate: 16000 });
@@ -764,7 +937,10 @@ async function startSession() {
       for (let i = 0; i < float32.length; i++) {
         int16[i] = Math.max(-32768, Math.min(32767, float32[i] * 32768));
       }
-      const b64 = btoa(String.fromCharCode(...new Uint8Array(int16.buffer)));
+      const bytes = new Uint8Array(int16.buffer);
+      let bin = '';
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      const b64 = btoa(bin);
       try {
         session.sendRealtimeInput({
           audio: { data: b64, mimeType: 'audio/pcm;rate=16000' }
@@ -773,62 +949,91 @@ async function startSession() {
     };
 
     source.connect(processor);
-    processor.connect(audioContext.destination);
+    const silencer = audioContext.createGain();
+    silencer.gain.value = 0;
+    processor.connect(silencer);
+    silencer.connect(audioContext.destination);
+
+    // Create playback context before connect — avoids AudioContext state race in onopen
+    playbackContext = new AudioContext({ sampleRate: 24000 });
+    nextPlayTime = 0;
 
     session = await ai.live.connect({
-      model: 'gemini-3.1-flash-live-preview',
+      model: 'gemini-2.0-flash-live',
       callbacks: {
         onopen: () => {
           sessionReady = true;
           isListening = true;
-          playbackContext = new AudioContext({ sampleRate: 24000 });
+          isConnecting = false;
+          reconnectAttempts = 0;
           setStatus('speaking', 'J.A.R.V.I.S ONLINE');
           arcIcon.textContent = '◉';
           setTimeout(() => {
-            if (session) session.sendClientContent({
-              turns: [{ role: 'user', parts: [{ text: 'Greet me and let me know you are online and ready.' }] }],
-              turnComplete: true,
-            });
-          }, 200);
+            try {
+              if (session) session.sendClientContent({
+                turns: [{ role: 'user', parts: [{ text: 'Greet me and let me know you are online and ready.' }] }],
+                turnComplete: true,
+              });
+            } catch(e) { /* session closed before greeting could be sent */ }
+          }, 500);
         },
         onmessage: async (msg) => {
-          // Primary audio path — all Gemini audio (including tool call responses) comes here
+          // Handle model turn parts (audio, text, function calls)
+          const parts = msg.serverContent?.modelTurn?.parts ?? [];
+          for (const part of parts) {
+            if (part.inlineData?.data && part.inlineData?.mimeType?.startsWith('audio/')) {
+              isSpeaking = true;
+              setStatus('speaking', 'J.A.R.V.I.S SPEAKING');
+              playPcm16(part.inlineData.data, 24000);
+              clearTimeout(isSpeakingTimeout);
+              isSpeakingTimeout = setTimeout(() => { isSpeaking = false; }, 60000);
+            }
+            if (part.text) {
+              responseEl.textContent = part.text;
+            }
+          }
+
+          // Fallback: some SDK versions deliver audio via msg.data (raw WebSocket pattern)
           if (msg.data) {
             isSpeaking = true;
             setStatus('speaking', 'J.A.R.V.I.S SPEAKING');
             playPcm16(msg.data, 24000);
+            clearTimeout(isSpeakingTimeout);
+            isSpeakingTimeout = setTimeout(() => { isSpeaking = false; }, 60000);
           }
-          if (msg.serverContent?.modelTurn?.parts) {
-            for (const part of msg.serverContent.modelTurn.parts) {
-              if (part.text) {
-                responseEl.textContent = part.text;
+
+          // Handle function calls separately — process in parallel, send all responses together
+          const functionCallParts = parts.filter(p => p.functionCall);
+          if (functionCallParts.length > 0) {
+            setStatus('thinking', `EXECUTING ${functionCallParts.map(p => p.functionCall.name.toUpperCase().replace(/_/g,' ')).join(' + ')}...`);
+            const responses = await Promise.all(functionCallParts.map(async (part) => {
+              let result;
+              try {
+                result = await handleFunctionCall(part.functionCall.name, part.functionCall.args || {});
+              } catch(e) {
+                result = { error: e.message || 'API call failed' };
               }
-              if (part.functionCall) {
-                setStatus('thinking', `EXECUTING ${part.functionCall.name.toUpperCase().replace(/_/g,' ')}...`);
-                let result;
-                try {
-                  result = await handleFunctionCall(part.functionCall.name, part.functionCall.args || {});
-                } catch(e) {
-                  result = { error: e.message || 'API call failed' };
-                }
-                try {
-                  await session.sendToolResponse({
-                    functionResponses: [{
-                      id:       part.functionCall.id,
-                      name:     part.functionCall.name,
-                      response: { output: result },
-                    }]
-                  });
-                } catch(e) { /* session closed */ }
-              }
-            }
+              return {
+                id:       part.functionCall.id,
+                name:     part.functionCall.name,
+                response: { output: JSON.stringify(result) },
+              };
+            }));
+            try {
+              await session.sendToolResponse({ functionResponses: responses });
+            } catch(e) { /* session closed */ }
           }
+
+          // Input transcription
           if (msg.serverContent?.inputTranscription?.text) {
             transcriptEl.textContent = msg.serverContent.inputTranscription.text;
           }
+
+          // Turn complete
           if (msg.serverContent?.turnComplete) {
-            isSpeaking = false;
-            setStatus('listening', 'AWAITING YOUR COMMAND, SIR');
+            if (functionCallParts.length === 0) {
+              waitForPlaybackThenUnmute();
+            }
           }
         },
         onerror: (err) => {
@@ -837,31 +1042,47 @@ async function startSession() {
         },
         onclose: (event) => {
           sessionReady = false;
-          const reason = event?.reason || event?.code || 'unknown';
-          if (isListening) showError('SESSION CLOSED: code=' + (event?.code) + ' reason=' + (event?.reason || 'none'));
+          const wasListening = isListening;
           stopSession();
+          if (wasListening && event?.code === 1000) {
+            if (reconnectAttempts < 4) {
+              const delay = Math.min(1500 * Math.pow(2, reconnectAttempts), 30000);
+              reconnectAttempts++;
+              setStatus('thinking', `RECONNECTING (${reconnectAttempts}/4)...`);
+              setTimeout(() => startSession(), delay);
+            } else {
+              reconnectAttempts = 0;
+              showError('Maximum reconnection attempts reached. Tap arc to reconnect manually.', true);
+              setStatus('', 'SYSTEMS STANDBY');
+            }
+          } else if (wasListening) {
+            showError('SESSION CLOSED — code=' + (event?.code) + ' reason=' + (event?.reason || 'none') + '. Tap arc to reconnect.', true);
+          }
         },
       },
       config: {
         responseModalities: ['AUDIO'],
-        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        systemInstruction: { parts: [{ text: SYSTEM_PROMPT + `\n\nSAFETY LOCK: ${isReadOnly ? 'ENGAGED — read-only mode. No write operations permitted.' : 'DISENGAGED — full control mode.'}` }] },
         tools: [{ functionDeclarations: FUNCTION_DECLARATIONS }],
         inputAudioTranscription: {},
       },
     });
 
   } catch (err) {
+    isConnecting = false;
     showError('INITIALISATION FAILED: ' + err.message);
     setStatus('', 'SYSTEMS STANDBY');
   }
 }
 
 function stopSession() {
+  isConnecting = false;
   if (session) { try { session.close(); } catch(e) {} session = null; }
   if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
   if (audioContext) { try { audioContext.close(); } catch(e) {} audioContext = null; }
   if (playbackContext) { try { playbackContext.close(); } catch(e) {} playbackContext = null; }
-  playbackQueue = Promise.resolve();
+  clearTimeout(isSpeakingTimeout);
+  nextPlayTime = 0;
   isListening = false;
   isSpeaking = false;
   setStatus('', 'SYSTEMS STANDBY');
@@ -883,9 +1104,13 @@ if (CONFIG.adminVoiceToken) {
       CONFIG.geminiApiKey = json.data.gemini_api_key;
       responseEl.textContent = 'All systems online, sir. Ready for your command.';
     } else {
-      showError('Could not load Gemini key from server — check admin settings.');
+      document.getElementById('configPanel').style.display = '';
+      showError('Could not load Gemini key — reconfigure below.', true);
     }
-  }).catch(() => showError('Network error fetching Gemini config from server.'));
+  }).catch(() => {
+    document.getElementById('configPanel').style.display = '';
+    showError('Network error fetching config — reconfigure below.', true);
+  });
 }
 </script>
 </body>
