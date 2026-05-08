@@ -919,7 +919,7 @@ async function startSession() {
     showError('GEMINI KEY NOT LOADED — please save your voice token first');
     return;
   }
-  const ai = new GoogleGenAI({ apiKey: CONFIG.geminiApiKey });
+  const ai = new GoogleGenAI({ apiKey: CONFIG.geminiApiKey, httpOptions: { apiVersion: 'v1alpha' } });
   let sessionReady = false;
 
   try {
