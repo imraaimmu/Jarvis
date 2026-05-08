@@ -455,6 +455,7 @@ document.getElementById('saveConfig').addEventListener('click', async () => {
 let session           = null;
 let mediaStream       = null;
 let audioContext      = null;
+let micGainNode       = null;
 let isListening       = false;
 let isSpeaking        = false;
 let isSpeakingTimeout = null;
@@ -894,10 +895,12 @@ function playPcm16(base64, sampleRate = 24000) {
 async function waitForPlaybackThenUnmute() {
   if (playbackContext && nextPlayTime > playbackContext.currentTime) {
     const remainingMs = (nextPlayTime - playbackContext.currentTime) * 1000;
-    await new Promise(resolve => setTimeout(resolve, remainingMs + 80));
+    // Extra 500ms lets room acoustics/speaker resonance die down before mic reopens
+    await new Promise(resolve => setTimeout(resolve, remainingMs + 500));
   }
   isSpeaking = false;
   clearTimeout(isSpeakingTimeout);
+  if (micGainNode) micGainNode.gain.setTargetAtTime(1, audioContext.currentTime, 0.05);
   setStatus('listening', 'AWAITING YOUR COMMAND, SIR');
 }
 
@@ -928,6 +931,10 @@ async function startSession() {
     // Set up audio pipeline first (but don't start sending until session is ready)
     audioContext = new AudioContext({ sampleRate: 16000 });
     const source = audioContext.createMediaStreamSource(mediaStream);
+    const micGain = audioContext.createGain();
+    micGain.gain.value = 1;
+    micGainNode = micGain;
+    source.connect(micGain);
     const processor = audioContext.createScriptProcessor(4096, 1, 1);
 
     processor.onaudioprocess = (e) => {
@@ -948,7 +955,7 @@ async function startSession() {
       } catch (e) { /* session closed mid-send, ignore */ }
     };
 
-    source.connect(processor);
+    micGain.connect(processor);
     const silencer = audioContext.createGain();
     silencer.gain.value = 0;
     processor.connect(silencer);
@@ -983,10 +990,11 @@ async function startSession() {
           for (const part of parts) {
             if (part.inlineData?.data && part.inlineData?.mimeType?.startsWith('audio/')) {
               isSpeaking = true;
+              if (micGainNode) micGainNode.gain.setTargetAtTime(0, audioContext.currentTime, 0.01);
               setStatus('speaking', 'J.A.R.V.I.S SPEAKING');
               playPcm16(part.inlineData.data, 24000);
               clearTimeout(isSpeakingTimeout);
-              isSpeakingTimeout = setTimeout(() => { isSpeaking = false; }, 60000);
+              isSpeakingTimeout = setTimeout(() => { isSpeaking = false; if (micGainNode) micGainNode.gain.setTargetAtTime(1, audioContext.currentTime, 0.05); }, 60000);
             }
             if (part.text) {
               responseEl.textContent = part.text;
@@ -996,10 +1004,11 @@ async function startSession() {
           // Fallback: some SDK versions deliver audio via msg.data (raw WebSocket pattern)
           if (msg.data) {
             isSpeaking = true;
+            if (micGainNode) micGainNode.gain.setTargetAtTime(0, audioContext.currentTime, 0.01);
             setStatus('speaking', 'J.A.R.V.I.S SPEAKING');
             playPcm16(msg.data, 24000);
             clearTimeout(isSpeakingTimeout);
-            isSpeakingTimeout = setTimeout(() => { isSpeaking = false; }, 60000);
+            isSpeakingTimeout = setTimeout(() => { isSpeaking = false; if (micGainNode) micGainNode.gain.setTargetAtTime(1, audioContext.currentTime, 0.05); }, 60000);
           }
 
           // Handle function calls separately — process in parallel, send all responses together
@@ -1081,6 +1090,7 @@ function stopSession() {
   if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
   if (audioContext) { try { audioContext.close(); } catch(e) {} audioContext = null; }
   if (playbackContext) { try { playbackContext.close(); } catch(e) {} playbackContext = null; }
+  micGainNode = null;
   clearTimeout(isSpeakingTimeout);
   nextPlayTime = 0;
   isListening = false;
