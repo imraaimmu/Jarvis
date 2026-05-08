@@ -1,27 +1,790 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Jarvis — Voice Admin</title>
-    <style>
-        body {
-            font-family: system-ui, sans-serif;
-            background: #0a0a0a;
-            color: #e0e0e0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            margin: 0;
-        }
-        h1 { color: #4fc3f7; letter-spacing: 0.1em; }
-        p { color: #888; font-size: 0.9rem; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>J.A.R.V.I.S — Kukoo Admin</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;500&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --blue: #00d4ff;
+    --blue-dim: #0077aa;
+    --blue-dark: #001a2e;
+    --gold: #ffd700;
+    --red: #ff3333;
+    --green: #00ff88;
+    --bg: #020b14;
+    --panel: rgba(0, 30, 60, 0.85);
+  }
+
+  body {
+    background: var(--bg);
+    color: #c0e8ff;
+    font-family: 'Rajdhani', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px 40px;
+    overflow-x: hidden;
+  }
+
+  /* Animated grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 680px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+  }
+
+  /* Header */
+  .header {
+    text-align: center;
+    margin-bottom: 4px;
+  }
+  .header h1 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 2rem;
+    font-weight: 900;
+    color: var(--blue);
+    letter-spacing: 0.3em;
+    text-shadow: 0 0 20px rgba(0,212,255,0.5);
+  }
+  .header .sub {
+    font-size: 0.75rem;
+    color: var(--blue-dim);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  /* Arc reactor mic button */
+  .arc-container {
+    position: relative;
+    width: 120px;
+    height: 120px;
+    cursor: pointer;
+  }
+  .arc-ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 2px solid;
+    animation: none;
+  }
+  .arc-ring-1 { inset: 0; border-color: var(--blue-dim); }
+  .arc-ring-2 { inset: 8px; border-color: rgba(0,212,255,0.4); }
+  .arc-ring-3 { inset: 18px; border-color: rgba(0,212,255,0.2); }
+  .arc-core {
+    position: absolute;
+    inset: 28px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(0,212,255,0.15) 0%, transparent 70%);
+    border: 2px solid var(--blue-dim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8rem;
+    transition: all 0.3s;
+  }
+
+  .arc-container.idle .arc-core { box-shadow: 0 0 15px rgba(0,212,255,0.3); }
+
+  .arc-container.listening .arc-ring-1 {
+    border-color: var(--blue);
+    animation: spin-slow 4s linear infinite;
+  }
+  .arc-container.listening .arc-ring-2 {
+    border-color: var(--blue);
+    animation: spin-slow 3s linear infinite reverse;
+  }
+  .arc-container.listening .arc-core {
+    background: radial-gradient(circle, rgba(0,212,255,0.4) 0%, transparent 70%);
+    border-color: var(--blue);
+    box-shadow: 0 0 30px rgba(0,212,255,0.6), 0 0 60px rgba(0,212,255,0.2);
+  }
+  .arc-container.thinking .arc-ring-1 { border-color: var(--gold); animation: spin-fast 1s linear infinite; }
+  .arc-container.thinking .arc-core { border-color: var(--gold); box-shadow: 0 0 25px rgba(255,215,0,0.5); }
+  .arc-container.speaking .arc-ring-1 { border-color: var(--green); animation: pulse-ring 0.8s ease-in-out infinite; }
+  .arc-container.speaking .arc-core { border-color: var(--green); box-shadow: 0 0 25px rgba(0,255,136,0.5); }
+
+  @keyframes spin-slow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  @keyframes spin-fast { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  @keyframes pulse-ring { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.05); opacity: 0.7; } }
+
+  /* Status text */
+  .status-line {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.7rem;
+    letter-spacing: 0.2em;
+    color: var(--blue-dim);
+    text-transform: uppercase;
+    min-height: 18px;
+    transition: color 0.3s;
+  }
+  .status-line.listening { color: var(--blue); }
+  .status-line.thinking  { color: var(--gold); }
+  .status-line.speaking  { color: var(--green); }
+
+  /* Panels */
+  .panel {
+    width: 100%;
+    background: var(--panel);
+    border: 1px solid rgba(0,212,255,0.2);
+    border-radius: 8px;
+    padding: 14px 18px;
+    backdrop-filter: blur(10px);
+  }
+  .panel-label {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.6rem;
+    letter-spacing: 0.25em;
+    color: var(--blue-dim);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+  }
+  .panel-text {
+    font-size: 0.95rem;
+    line-height: 1.6;
+    color: #a0d8f0;
+    min-height: 24px;
+  }
+  .panel.response-panel { border-color: rgba(0,212,255,0.35); }
+  .panel.response-panel .panel-text { color: var(--blue); font-size: 1rem; }
+
+  /* API log */
+  .api-log {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
+    color: #1a5570;
+    min-height: 16px;
+    text-align: center;
+    width: 100%;
+  }
+
+  /* Image drop zone */
+  .drop-zone {
+    width: 100%;
+    border: 1px dashed rgba(0,212,255,0.25);
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s;
+    font-size: 0.8rem;
+    color: #1a5570;
+    font-family: 'Rajdhani', sans-serif;
+    letter-spacing: 0.05em;
+  }
+  .drop-zone.has-image { border-color: var(--green); color: var(--green); }
+  .drop-zone:hover { border-color: rgba(0,212,255,0.5); }
+  .drop-zone img { max-height: 80px; margin-top: 8px; border-radius: 4px; }
+
+  /* Channel chips */
+  .channels {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
+  }
+  .channel-chip {
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-family: 'Orbitron', sans-serif;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    border: 1px solid rgba(0,212,255,0.2);
+    background: transparent;
+    color: #1a5570;
+    text-transform: uppercase;
+    transition: all 0.15s;
+  }
+  .channel-chip.active {
+    background: rgba(0,212,255,0.1);
+    border-color: var(--blue);
+    color: var(--blue);
+    box-shadow: 0 0 8px rgba(0,212,255,0.2);
+  }
+
+  /* Config panel */
+  .config-panel {
+    width: 100%;
+    background: rgba(0,10,20,0.9);
+    border: 1px solid rgba(0,212,255,0.15);
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .config-panel label {
+    display: block;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.6rem;
+    letter-spacing: 0.15em;
+    color: var(--blue-dim);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+  }
+  .config-panel input {
+    width: 100%;
+    background: rgba(0,212,255,0.05);
+    border: 1px solid rgba(0,212,255,0.2);
+    border-radius: 4px;
+    padding: 8px 10px;
+    color: #c0e8ff;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.9rem;
+    margin-bottom: 10px;
+    outline: none;
+  }
+  .config-panel input:focus { border-color: var(--blue); }
+  .config-panel input[type="password"] { letter-spacing: 0.1em; }
+
+  .save-btn {
+    background: rgba(0,212,255,0.1);
+    border: 1px solid var(--blue);
+    color: var(--blue);
+    padding: 8px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    transition: all 0.2s;
+  }
+  .save-btn:hover { background: rgba(0,212,255,0.2); box-shadow: 0 0 10px rgba(0,212,255,0.3); }
+
+  .error-msg { color: var(--red); font-size: 0.8rem; min-height: 18px; text-align: center; width: 100%; }
+
+  /* Scanline effect */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+    pointer-events: none;
+    z-index: 0;
+  }
+</style>
 </head>
 <body>
-    <h1>JARVIS</h1>
-    <p>Voice Admin — coming in Plan 4</p>
+<div class="container">
+
+  <div class="header">
+    <h1>J.A.R.V.I.S</h1>
+    <div class="sub">Just A Rather Very Intelligent System · Kukoo Admin Interface</div>
+  </div>
+
+  <div class="arc-container idle" id="arcBtn">
+    <div class="arc-ring arc-ring-1"></div>
+    <div class="arc-ring arc-ring-2"></div>
+    <div class="arc-ring arc-ring-3"></div>
+    <div class="arc-core" id="arcIcon">⬡</div>
+  </div>
+
+  <div class="status-line" id="statusText">SYSTEMS STANDBY</div>
+
+  <div class="panel">
+    <div class="panel-label">Input Transcription</div>
+    <div class="panel-text" id="transcriptText">—</div>
+  </div>
+
+  <div class="panel response-panel">
+    <div class="panel-label">J.A.R.V.I.S Response</div>
+    <div class="panel-text" id="responseText">Good day, sir. Systems are online and awaiting your command.</div>
+  </div>
+
+  <div class="api-log" id="apiLog"></div>
+
+  <div class="drop-zone" id="dropZone">
+    ▣ DROP CAMPAIGN IMAGE HERE
+    <div>Banner · Instagram · WhatsApp Broadcast</div>
+    <input type="file" id="imageInput" accept="image/*" style="display:none">
+    <div id="imagePreview"></div>
+  </div>
+
+  <div class="channels">
+    <span class="channel-chip active" data-channel="whatsapp">WhatsApp</span>
+    <span class="channel-chip active" data-channel="push">Push</span>
+    <span class="channel-chip" data-channel="sms">SMS</span>
+    <span class="channel-chip" data-channel="email">Email</span>
+  </div>
+
+  <div class="config-panel" id="configPanel">
+    <label>Gemini API Key</label>
+    <input type="password" id="geminiKey" placeholder="AIza..." autocomplete="off">
+    <label>Admin Voice Token</label>
+    <input type="password" id="voiceToken" placeholder="Bearer token from .env" autocomplete="off">
+    <label>API Base URL</label>
+    <input type="text" id="apiBase" value="https://staging.kukoo.in/api/admin/voice">
+    <button class="save-btn" id="saveConfig">SAVE CREDENTIALS</button>
+  </div>
+
+  <div class="error-msg" id="errorMsg"></div>
+
+</div>
+
+<script type="module">
+import { GoogleGenAI, Modality } from 'https://esm.run/@google/genai';
+
+// ─── CONFIG (persisted in localStorage) ─────────────────────────────────────
+const CONFIG = {
+  get geminiApiKey()    { return localStorage.getItem('jarvis_gemini_key') || ''; },
+  get adminVoiceToken() { return localStorage.getItem('jarvis_voice_token') || ''; },
+  get adminApiBase()    { return localStorage.getItem('jarvis_api_base') || 'https://staging.kukoo.in/api/admin/voice'; },
+};
+
+// Restore saved config
+document.getElementById('geminiKey').value = CONFIG.geminiApiKey;
+document.getElementById('voiceToken').value = CONFIG.adminVoiceToken;
+document.getElementById('apiBase').value = CONFIG.adminApiBase;
+
+document.getElementById('saveConfig').addEventListener('click', () => {
+  localStorage.setItem('jarvis_gemini_key',    document.getElementById('geminiKey').value.trim());
+  localStorage.setItem('jarvis_voice_token',   document.getElementById('voiceToken').value.trim());
+  localStorage.setItem('jarvis_api_base',      document.getElementById('apiBase').value.trim());
+  document.getElementById('configPanel').style.display = 'none';
+  showError('');
+  responseEl.textContent = 'Credentials saved, sir. Ready when you are.';
+});
+
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let session       = null;
+let mediaStream   = null;
+let audioContext  = null;
+let isListening   = false;
+let pendingImage  = null;
+let activeChannels = ['whatsapp', 'push'];
+
+// ─── UI REFS ──────────────────────────────────────────────────────────────────
+const arcBtn       = document.getElementById('arcBtn');
+const arcIcon      = document.getElementById('arcIcon');
+const statusText   = document.getElementById('statusText');
+const transcriptEl = document.getElementById('transcriptText');
+const responseEl   = document.getElementById('responseText');
+const apiLogEl     = document.getElementById('apiLog');
+const errorEl      = document.getElementById('errorMsg');
+const dropZone     = document.getElementById('dropZone');
+const imageInput   = document.getElementById('imageInput');
+
+function setStatus(state, text) {
+  statusText.className = 'status-line ' + state;
+  statusText.textContent = text;
+  arcBtn.className = 'arc-container ' + (state || 'idle');
+  const icons = { listening: '◉', thinking: '⟳', speaking: '◈', '': '⬡' };
+  arcIcon.textContent = icons[state] ?? '⬡';
+}
+
+function logApi(method, path, ok) {
+  apiLogEl.textContent = `${ok ? '✓' : '✗'} ${method} /...${path.slice(-40)}`;
+}
+
+function showError(msg) {
+  errorEl.textContent = msg;
+  if (msg) setTimeout(() => errorEl.textContent = '', 6000);
+}
+
+// ─── API HELPER ──────────────────────────────────────────────────────────────
+async function fetchAdmin(method, path, body = null, isFormData = false) {
+  const headers = { 'Authorization': `Bearer ${CONFIG.adminVoiceToken}` };
+  if (!isFormData && body) headers['Content-Type'] = 'application/json';
+  const opts = { method, headers };
+  if (body) opts.body = isFormData ? body : JSON.stringify(body);
+  const res = await fetch(CONFIG.adminApiBase + path, opts);
+  logApi(method, path, res.ok);
+  return res.json();
+}
+
+// ─── IMAGE DROP ZONE ─────────────────────────────────────────────────────────
+dropZone.addEventListener('click', () => imageInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.borderColor = 'var(--green)'; });
+dropZone.addEventListener('dragleave', () => dropZone.style.borderColor = '');
+dropZone.addEventListener('drop', e => { e.preventDefault(); handleImageFile(e.dataTransfer.files[0]); });
+imageInput.addEventListener('change', e => handleImageFile(e.target.files[0]));
+
+function handleImageFile(file) {
+  if (!file) return;
+  pendingImage = file;
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById('imagePreview').innerHTML = `<img src="${e.target.result}"><br><small>IMAGE LOCKED</small>`;
+    dropZone.classList.add('has-image');
+  };
+  reader.readAsDataURL(file);
+}
+
+// ─── CHANNEL CHIPS ───────────────────────────────────────────────────────────
+document.querySelectorAll('.channel-chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    chip.classList.toggle('active');
+    const ch = chip.dataset.channel;
+    activeChannels = activeChannels.includes(ch)
+      ? activeChannels.filter(c => c !== ch)
+      : [...activeChannels, ch];
+  });
+});
+
+// ─── FUNCTION DECLARATIONS ───────────────────────────────────────────────────
+const FUNCTION_DECLARATIONS = [
+  { name: 'get_dashboard', description: "Get today's orders, revenue, pending orders, active stores", parameters: { type: 'object', properties: {} } },
+  { name: 'get_earnings', description: 'Get earnings and commission for a period', parameters: { type: 'object', properties: { period: { type: 'string', enum: ['today','week','month'] } }, required: ['period'] } },
+  { name: 'get_top_items', description: 'Get best selling items today', parameters: { type: 'object', properties: {} } },
+  { name: 'get_store_ranking', description: 'Get stores ranked by orders today', parameters: { type: 'object', properties: {} } },
+  { name: 'get_top_delivery_man', description: 'Get top delivery men today', parameters: { type: 'object', properties: {} } },
+  { name: 'get_expenses', description: 'Get this month\'s expenses', parameters: { type: 'object', properties: {} } },
+  { name: 'list_orders', description: 'List orders by status', parameters: { type: 'object', properties: { status: { type: 'string' } } } },
+  { name: 'get_order', description: 'Get details of an order', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'update_order_status', description: 'Update order status', parameters: { type: 'object', properties: { id: { type: 'integer' }, status: { type: 'string' } }, required: ['id','status'] } },
+  { name: 'assign_delivery_man', description: 'Assign delivery man to order', parameters: { type: 'object', properties: { id: { type: 'integer' }, delivery_man_id: { type: 'integer' } }, required: ['id','delivery_man_id'] } },
+  { name: 'search_orders', description: 'Search orders by ID, name, or phone', parameters: { type: 'object', properties: { q: { type: 'string' } }, required: ['q'] } },
+  { name: 'switch_order_to_cod', description: 'Switch order to cash on delivery', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'verify_offline_payment', description: 'Mark offline payment as verified', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'list_refunds', description: 'List refund requests', parameters: { type: 'object', properties: { status: { type: 'string', enum: ['pending','approved','rejected'] } } } },
+  { name: 'update_refund_status', description: 'Approve or reject a refund', parameters: { type: 'object', properties: { id: { type: 'integer' }, status: { type: 'string', enum: ['approved','rejected'] } }, required: ['id','status'] } },
+  { name: 'list_stores', description: 'List stores', parameters: { type: 'object', properties: { search: { type: 'string' } } } },
+  { name: 'toggle_store_status', description: 'Enable or disable a store', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'toggle_store_featured', description: 'Toggle store as featured', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'set_store_discount', description: 'Set discount on a store', parameters: { type: 'object', properties: { id: { type: 'integer' }, discount: { type: 'number' }, discount_type: { type: 'string', enum: ['percent','amount'] } }, required: ['id','discount'] } },
+  { name: 'clear_store_discount', description: 'Remove discount from a store', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'list_pending_stores', description: 'List stores awaiting approval', parameters: { type: 'object', properties: {} } },
+  { name: 'approve_store', description: 'Approve or deny a store', parameters: { type: 'object', properties: { id: { type: 'integer' }, action: { type: 'string', enum: ['approve','deny'] } }, required: ['id','action'] } },
+  { name: 'list_items', description: 'List items', parameters: { type: 'object', properties: { store_id: { type: 'integer' }, search: { type: 'string' } } } },
+  { name: 'toggle_item_status', description: 'Enable or disable an item', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'update_item_price', description: 'Update item price', parameters: { type: 'object', properties: { id: { type: 'integer' }, price: { type: 'number' } }, required: ['id','price'] } },
+  { name: 'update_item_stock', description: 'Update item stock', parameters: { type: 'object', properties: { id: { type: 'integer' }, stock: { type: 'integer' } }, required: ['id','stock'] } },
+  { name: 'disable_category_items', description: 'Disable all items in a category at a store', parameters: { type: 'object', properties: { store_id: { type: 'integer' }, category_id: { type: 'integer' } }, required: ['store_id','category_id'] } },
+  { name: 'get_low_stock_items', description: 'Get low stock items', parameters: { type: 'object', properties: { threshold: { type: 'integer' } } } },
+  { name: 'list_pending_items', description: 'List items pending approval', parameters: { type: 'object', properties: {} } },
+  { name: 'approve_item', description: 'Approve or deny a pending item', parameters: { type: 'object', properties: { id: { type: 'integer' }, action: { type: 'string', enum: ['approved','denied'] } }, required: ['id','action'] } },
+  { name: 'list_categories', description: 'List categories', parameters: { type: 'object', properties: { search: { type: 'string' } } } },
+  { name: 'toggle_category_status', description: 'Enable or disable a category', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'toggle_category_featured', description: 'Toggle category as featured', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'list_delivery_men', description: 'List delivery men', parameters: { type: 'object', properties: { search: { type: 'string' } } } },
+  { name: 'toggle_delivery_man_status', description: 'Block or unblock a delivery man', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'approve_delivery_man', description: 'Approve or deny delivery man application', parameters: { type: 'object', properties: { id: { type: 'integer' }, action: { type: 'string', enum: ['approved','denied'] } }, required: ['id','action'] } },
+  { name: 'get_dm_reviews', description: 'Get delivery man reviews', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'get_dm_payout', description: 'Get delivery man payout balance', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'search_customers', description: 'Search customers', parameters: { type: 'object', properties: { search: { type: 'string' } }, required: ['search'] } },
+  { name: 'get_customer_orders', description: 'Get customer order history', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'toggle_customer_status', description: 'Block or unblock a customer', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'add_wallet_funds', description: 'Add wallet credit to a customer', parameters: { type: 'object', properties: { id: { type: 'integer' }, amount: { type: 'number' } }, required: ['id','amount'] } },
+  { name: 'add_loyalty_points', description: 'Add loyalty points to a customer', parameters: { type: 'object', properties: { id: { type: 'integer' }, points: { type: 'integer' } }, required: ['id','points'] } },
+  { name: 'send_notification', description: 'Send push notification', parameters: { type: 'object', properties: { title: { type: 'string' }, message: { type: 'string' }, target: { type: 'string', enum: ['all','zone','customer'] }, zone_id: { type: 'integer' }, customer_id: { type: 'integer' } }, required: ['title','message','target'] } },
+  { name: 'list_coupons', description: 'List coupons', parameters: { type: 'object', properties: { search: { type: 'string' } } } },
+  { name: 'toggle_coupon_status', description: 'Enable or disable a coupon', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'create_coupon_for_customer', description: 'Create personalised coupon and optionally send via WhatsApp', parameters: { type: 'object', properties: { customer_id: { type: 'integer' }, discount_amount: { type: 'number' }, min_order: { type: 'number' }, expiry_days: { type: 'integer' }, send_via: { type: 'string', enum: ['whatsapp_api','whatsapp_deeplink'] } }, required: ['customer_id','discount_amount'] } },
+  { name: 'get_store_commission', description: 'Get store commission rate', parameters: { type: 'object', properties: { store_id: { type: 'integer' } }, required: ['store_id'] } },
+  { name: 'update_store_commission', description: 'Update store commission', parameters: { type: 'object', properties: { store_id: { type: 'integer' }, commission: { type: 'number' } }, required: ['store_id','commission'] } },
+  { name: 'get_store_payout', description: 'Get store pending payout', parameters: { type: 'object', properties: { store_id: { type: 'integer' } }, required: ['store_id'] } },
+  { name: 'list_disbursements', description: 'List pending disbursements', parameters: { type: 'object', properties: {} } },
+  { name: 'update_disbursement_status', description: 'Approve or reject disbursement', parameters: { type: 'object', properties: { id: { type: 'integer' }, status: { type: 'string', enum: ['approved','rejected'] } }, required: ['id','status'] } },
+  { name: 'list_store_withdrawals', description: 'List vendor withdrawal requests', parameters: { type: 'object', properties: { status: { type: 'string' } } } },
+  { name: 'update_store_withdrawal', description: 'Approve or reject vendor withdrawal', parameters: { type: 'object', properties: { id: { type: 'integer' }, status: { type: 'string', enum: ['approved','rejected'] } }, required: ['id','status'] } },
+  { name: 'list_dm_withdrawals', description: 'List delivery man withdrawals', parameters: { type: 'object', properties: {} } },
+  { name: 'update_dm_withdrawal', description: 'Approve or reject DM withdrawal', parameters: { type: 'object', properties: { id: { type: 'integer' }, status: { type: 'string', enum: ['approved','rejected'] } }, required: ['id','status'] } },
+  { name: 'list_zones', description: 'List delivery zones', parameters: { type: 'object', properties: {} } },
+  { name: 'toggle_zone_status', description: 'Enable or disable a zone', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'update_zone_delivery_charge', description: 'Update delivery charge for a zone', parameters: { type: 'object', properties: { id: { type: 'integer' }, charge: { type: 'number' } }, required: ['id','charge'] } },
+  { name: 'toggle_zone_cod', description: 'Toggle COD for a zone', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'toggle_zone_digital_payment', description: 'Toggle digital payment for a zone', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'list_surge_prices', description: 'List surge prices for a zone', parameters: { type: 'object', properties: { zone_id: { type: 'integer' } }, required: ['zone_id'] } },
+  { name: 'toggle_surge_price', description: 'Toggle surge price rule', parameters: { type: 'object', properties: { zone_id: { type: 'integer' }, surge_id: { type: 'integer' } }, required: ['zone_id','surge_id'] } },
+  { name: 'list_campaigns', description: 'List campaigns', parameters: { type: 'object', properties: {} } },
+  { name: 'toggle_campaign_status', description: 'Enable or disable a campaign', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'list_flash_sales', description: 'List flash sales', parameters: { type: 'object', properties: {} } },
+  { name: 'publish_flash_sale', description: 'Publish or unpublish a flash sale', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'list_cashbacks', description: 'List cashback promotions', parameters: { type: 'object', properties: {} } },
+  { name: 'toggle_cashback', description: 'Toggle cashback', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'list_wallet_bonuses', description: 'List wallet bonuses', parameters: { type: 'object', properties: {} } },
+  { name: 'toggle_wallet_bonus', description: 'Toggle wallet bonus', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'list_advertisements', description: 'List advertisements', parameters: { type: 'object', properties: {} } },
+  { name: 'toggle_advertisement', description: 'Toggle advertisement', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'list_banners', description: 'List banners', parameters: { type: 'object', properties: {} } },
+  { name: 'toggle_banner_status', description: 'Toggle banner status', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'toggle_banner_featured', description: 'Toggle banner featured', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'list_subscription_packages', description: 'List subscription packages', parameters: { type: 'object', properties: {} } },
+  { name: 'get_store_subscription', description: 'Get store subscription details', parameters: { type: 'object', properties: { store_id: { type: 'integer' } }, required: ['store_id'] } },
+  { name: 'cancel_store_subscription', description: 'Cancel store subscription', parameters: { type: 'object', properties: { store_id: { type: 'integer' } }, required: ['store_id'] } },
+  { name: 'switch_store_to_commission', description: 'Switch store to commission model', parameters: { type: 'object', properties: { store_id: { type: 'integer' } }, required: ['store_id'] } },
+  { name: 'list_service_bookings', description: 'List service bookings', parameters: { type: 'object', properties: { status: { type: 'string' } } } },
+  { name: 'refund_service_booking', description: 'Refund a service booking', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'list_employees', description: 'List admin employees', parameters: { type: 'object', properties: {} } },
+  { name: 'list_roles', description: 'List admin roles', parameters: { type: 'object', properties: {} } },
+  { name: 'list_messages', description: 'List conversations', parameters: { type: 'object', properties: { type: { type: 'string', enum: ['all','store','customer'] } } } },
+  { name: 'get_conversation', description: 'Read a conversation', parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  { name: 'reply_to_conversation', description: 'Reply to a conversation', parameters: { type: 'object', properties: { conversation_id: { type: 'integer' }, message: { type: 'string' } }, required: ['conversation_id','message'] } },
+  { name: 'count_segment', description: 'Count customers matching targeting criteria', parameters: { type: 'object', properties: { segment: { type: 'object' } }, required: ['segment'] } },
+  { name: 'launch_campaign', description: 'Launch full campaign — banner, coupon, WhatsApp, push, social media', parameters: { type: 'object', properties: {
+    title: { type: 'string' }, body: { type: 'string' },
+    channels: { type: 'array', items: { type: 'string', enum: ['whatsapp','push','sms','email'] } },
+    segment: { type: 'object' },
+    create_coupon: { type: 'boolean' }, coupon_discount: { type: 'number' }, coupon_type: { type: 'string' },
+    post_social: { type: 'boolean' }, social_caption: { type: 'string' },
+    expire_hours: { type: 'integer' }, schedule_minutes: { type: 'integer' },
+    whatsapp_template: { type: 'string' },
+  }, required: ['title','body'] } },
+];
+
+// ─── FUNCTION CALL HANDLER ───────────────────────────────────────────────────
+async function handleFunctionCall(name, args) {
+  const r = args;
+  switch (name) {
+    case 'get_dashboard':          return fetchAdmin('GET', '/dashboard');
+    case 'get_earnings':           return fetchAdmin('GET', `/reports/earnings?period=${r.period}`);
+    case 'get_top_items':          return fetchAdmin('GET', '/reports/top-items');
+    case 'get_store_ranking':      return fetchAdmin('GET', '/reports/store-ranking');
+    case 'get_top_delivery_man':   return fetchAdmin('GET', '/reports/top-dm');
+    case 'get_expenses':           return fetchAdmin('GET', '/reports/expenses');
+    case 'list_orders':            return fetchAdmin('GET', `/orders?status=${r.status||'pending'}`);
+    case 'get_order':              return fetchAdmin('GET', `/orders/${r.id}`);
+    case 'update_order_status':    return fetchAdmin('POST', `/orders/${r.id}/status`, { status: r.status });
+    case 'assign_delivery_man':    return fetchAdmin('POST', `/orders/${r.id}/assign-dm`, { delivery_man_id: r.delivery_man_id });
+    case 'search_orders':          return fetchAdmin('GET', `/orders/search?q=${encodeURIComponent(r.q)}`);
+    case 'switch_order_to_cod':    return fetchAdmin('POST', `/orders/${r.id}/switch-to-cod`);
+    case 'verify_offline_payment': return fetchAdmin('POST', `/orders/${r.id}/verify-offline-payment`);
+    case 'list_refunds':           return fetchAdmin('GET', `/refunds?status=${r.status||'pending'}`);
+    case 'update_refund_status':   return fetchAdmin('POST', `/refunds/${r.id}/status`, { status: r.status });
+    case 'list_stores':            return fetchAdmin('GET', `/stores${r.search ? '?search='+encodeURIComponent(r.search) : ''}`);
+    case 'toggle_store_status':    return fetchAdmin('POST', `/stores/${r.id}/status`);
+    case 'toggle_store_featured':  return fetchAdmin('POST', `/stores/${r.id}/featured`);
+    case 'set_store_discount':     return fetchAdmin('POST', `/stores/${r.id}/discount`, { discount: r.discount, discount_type: r.discount_type||'percent' });
+    case 'clear_store_discount':   return fetchAdmin('DELETE', `/stores/${r.id}/discount`);
+    case 'list_pending_stores':    return fetchAdmin('GET', '/stores/pending');
+    case 'approve_store':          return fetchAdmin('POST', `/stores/${r.id}/approve`, { action: r.action });
+    case 'list_items':             return fetchAdmin('GET', `/items?${new URLSearchParams({store_id:r.store_id||'',search:r.search||''})}`);
+    case 'toggle_item_status':     return fetchAdmin('POST', `/items/${r.id}/status`);
+    case 'update_item_price':      return fetchAdmin('POST', `/items/${r.id}/price`, { price: r.price });
+    case 'update_item_stock':      return fetchAdmin('POST', `/items/${r.id}/stock`, { stock: r.stock });
+    case 'disable_category_items': return fetchAdmin('POST', `/stores/${r.store_id}/category/${r.category_id}/disable`);
+    case 'get_low_stock_items':    return fetchAdmin('GET', `/items/low-stock?threshold=${r.threshold||5}`);
+    case 'list_pending_items':     return fetchAdmin('GET', '/items/pending-approval');
+    case 'approve_item':           return fetchAdmin('POST', `/items/${r.id}/approve`, { action: r.action });
+    case 'list_categories':        return fetchAdmin('GET', `/categories${r.search ? '?search='+encodeURIComponent(r.search) : ''}`);
+    case 'toggle_category_status': return fetchAdmin('POST', `/categories/${r.id}/status`);
+    case 'toggle_category_featured': return fetchAdmin('POST', `/categories/${r.id}/featured`);
+    case 'list_delivery_men':      return fetchAdmin('GET', `/delivery-men${r.search ? '?search='+encodeURIComponent(r.search) : ''}`);
+    case 'toggle_delivery_man_status': return fetchAdmin('POST', `/delivery-men/${r.id}/status`);
+    case 'approve_delivery_man':   return fetchAdmin('POST', `/delivery-men/${r.id}/approve`, { action: r.action });
+    case 'get_dm_reviews':         return fetchAdmin('GET', `/delivery-men/${r.id}/reviews`);
+    case 'get_dm_payout':          return fetchAdmin('GET', `/delivery-men/${r.id}/payout`);
+    case 'search_customers':       return fetchAdmin('GET', `/customers?search=${encodeURIComponent(r.search)}`);
+    case 'get_customer_orders':    return fetchAdmin('GET', `/customers/${r.id}/orders`);
+    case 'toggle_customer_status': return fetchAdmin('POST', `/customers/${r.id}/status`);
+    case 'add_wallet_funds':       return fetchAdmin('POST', `/customers/${r.id}/wallet`, { amount: r.amount });
+    case 'add_loyalty_points':     return fetchAdmin('POST', `/customers/${r.id}/loyalty-points`, { points: r.points });
+    case 'send_notification':      return fetchAdmin('POST', '/notifications/send', r);
+    case 'list_coupons':           return fetchAdmin('GET', '/coupons');
+    case 'toggle_coupon_status':   return fetchAdmin('POST', `/coupons/${r.id}/status`);
+    case 'create_coupon_for_customer': {
+      const result = await fetchAdmin('POST', '/coupons/create-for-customer', r);
+      if (result.data?.whatsapp_deeplink) window.open(result.data.whatsapp_deeplink, '_blank');
+      return result;
+    }
+    case 'get_store_commission':        return fetchAdmin('GET', `/stores/${r.store_id}/commission`);
+    case 'update_store_commission':     return fetchAdmin('POST', `/stores/${r.store_id}/commission`, { commission: r.commission });
+    case 'get_store_payout':            return fetchAdmin('GET', `/stores/${r.store_id}/payout`);
+    case 'list_disbursements':          return fetchAdmin('GET', '/disbursements');
+    case 'update_disbursement_status':  return fetchAdmin('POST', `/disbursements/${r.id}/status`, { status: r.status });
+    case 'list_store_withdrawals':  return fetchAdmin('GET', `/withdrawals?status=${r.status||'pending'}`);
+    case 'update_store_withdrawal': return fetchAdmin('POST', `/withdrawals/${r.id}/status`, { status: r.status });
+    case 'list_dm_withdrawals':     return fetchAdmin('GET', '/dm-withdrawals');
+    case 'update_dm_withdrawal':    return fetchAdmin('POST', `/dm-withdrawals/${r.id}/status`, { status: r.status });
+    case 'list_zones':                   return fetchAdmin('GET', '/zones');
+    case 'toggle_zone_status':           return fetchAdmin('POST', `/zones/${r.id}/status`);
+    case 'update_zone_delivery_charge':  return fetchAdmin('POST', `/zones/${r.id}/delivery-charge`, { charge: r.charge });
+    case 'toggle_zone_cod':              return fetchAdmin('POST', `/zones/${r.id}/cod`);
+    case 'toggle_zone_digital_payment':  return fetchAdmin('POST', `/zones/${r.id}/digital-payment`);
+    case 'list_surge_prices':            return fetchAdmin('GET', `/zones/${r.zone_id}/surge-prices`);
+    case 'toggle_surge_price':           return fetchAdmin('POST', `/zones/${r.zone_id}/surge-prices/${r.surge_id}/status`);
+    case 'list_campaigns':       return fetchAdmin('GET', '/campaigns');
+    case 'toggle_campaign_status': return fetchAdmin('POST', `/campaigns/${r.id}/status`);
+    case 'list_flash_sales':     return fetchAdmin('GET', '/flash-sales');
+    case 'publish_flash_sale':   return fetchAdmin('POST', `/flash-sales/${r.id}/publish`);
+    case 'list_cashbacks':       return fetchAdmin('GET', '/cashbacks');
+    case 'toggle_cashback':      return fetchAdmin('POST', `/cashbacks/${r.id}/status`);
+    case 'list_wallet_bonuses':  return fetchAdmin('GET', '/wallet-bonuses');
+    case 'toggle_wallet_bonus':  return fetchAdmin('POST', `/wallet-bonuses/${r.id}/status`);
+    case 'list_advertisements':  return fetchAdmin('GET', '/advertisements');
+    case 'toggle_advertisement': return fetchAdmin('POST', `/advertisements/${r.id}/status`);
+    case 'list_banners':         return fetchAdmin('GET', '/banners');
+    case 'toggle_banner_status': return fetchAdmin('POST', `/banners/${r.id}/status`);
+    case 'toggle_banner_featured': return fetchAdmin('POST', `/banners/${r.id}/featured`);
+    case 'list_subscription_packages': return fetchAdmin('GET', '/subscriptions/packages');
+    case 'get_store_subscription':     return fetchAdmin('GET', `/subscriptions/stores/${r.store_id}`);
+    case 'cancel_store_subscription':  return fetchAdmin('POST', `/subscriptions/stores/${r.store_id}/cancel`);
+    case 'switch_store_to_commission': return fetchAdmin('POST', `/subscriptions/stores/${r.store_id}/switch-to-commission`);
+    case 'list_service_bookings':  return fetchAdmin('GET', `/service-bookings?status=${r.status||'pending'}`);
+    case 'refund_service_booking': return fetchAdmin('POST', `/service-bookings/${r.id}/refund`);
+    case 'list_employees': return fetchAdmin('GET', '/employees');
+    case 'list_roles':     return fetchAdmin('GET', '/roles');
+    case 'list_messages':          return fetchAdmin('GET', `/messages?type=${r.type||'all'}`);
+    case 'get_conversation':       return fetchAdmin('GET', `/messages/${r.id}`);
+    case 'reply_to_conversation':  return fetchAdmin('POST', `/messages/${r.conversation_id}/reply`, { message: r.message });
+    case 'count_segment': return fetchAdmin('POST', '/campaign-launcher/segment-count', { segment: r.segment });
+    case 'launch_campaign': {
+      const payload = { ...r, channels: activeChannels };
+      if (pendingImage) {
+        const formData = new FormData();
+        formData.append('image', pendingImage);
+        const uploadRes = await fetchAdmin('POST', '/campaign-launcher/upload-image', formData, true);
+        payload.banner_image_url = uploadRes.data?.image_url;
+        pendingImage = null;
+        document.getElementById('imagePreview').innerHTML = '';
+        dropZone.classList.remove('has-image');
+      }
+      return fetchAdmin('POST', '/campaign-launcher/launch', payload);
+    }
+    default: return { error: `Unknown function: ${name}` };
+  }
+}
+
+// ─── SYSTEM PROMPT (JARVIS PERSONA) ──────────────────────────────────────────
+const SYSTEM_PROMPT = `You are J.A.R.V.I.S — Just A Rather Very Intelligent System — the AI assistant for the Kukoo food delivery platform admin panel. You serve your operator with the precision, wit, and dry British elegance of Tony Stark's AI.
+
+PERSONA RULES (non-negotiable):
+- Always address the user as "sir"
+- Speak with calm authority and dry wit — never robotic, never verbose
+- Summarise numbers conversationally: say "fourteen pending orders, sir" not a bulleted list
+- When something works: brief, confident, slightly smug. "Done, sir."
+- When something fails: acknowledge it cleanly, suggest next steps. No excessive apology.
+- For destructive actions (cancelling subscriptions, blocking customers, mass changes): confirm first. "Just to confirm, sir — you'd like me to..."
+- After a campaign launch, narrate each action like a mission debrief: "Banner created. Coupon KUKOO42 dispatched. Broadcasting to 847 customers via WhatsApp and push. Shall I post to social as well, sir?"
+- If an API returns an error, diagnose it like Jarvis would: "The store appears to be offline, sir. Or possibly nonexistent. Shall I check?"
+- Keep responses to 1-3 sentences. Brevity is elegance.
+- Never say "I cannot" — find a way or explain the constraint with class.
+- If you don't know an ID, ask. "Which store are you referring to, sir? I have several candidates."
+
+CAPABILITIES: You have access to 96 admin operations — orders, stores, items, delivery men, customers, zones, campaigns, payments, notifications, coupons, and a full campaign launcher that can fire banner + coupon + WhatsApp + push + Instagram in a single command.
+
+Current date: ${new Date().toLocaleDateString('en-IN', { weekday:'long', day:'numeric', month:'long', year:'numeric' })}.
+Platform: Kukoo multivendor food & grocery delivery, staging environment.`;
+
+// ─── GEMINI LIVE SESSION ──────────────────────────────────────────────────────
+const ai = new GoogleGenAI({ apiKey: CONFIG.geminiApiKey });
+
+async function startSession() {
+  if (!CONFIG.geminiApiKey) {
+    showError('GEMINI API KEY NOT SET — expand config panel below');
+    return;
+  }
+  if (!CONFIG.adminVoiceToken) {
+    showError('ADMIN VOICE TOKEN NOT SET — expand config panel below');
+    return;
+  }
+
+  try {
+    setStatus('thinking', 'INITIALISING SYSTEMS...');
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+    session = await ai.live.connect({
+      model: 'gemini-2.0-flash-live',
+      config: {
+        responseModalities: [Modality.AUDIO, Modality.TEXT],
+        systemInstruction: SYSTEM_PROMPT,
+        tools: [{ functionDeclarations: FUNCTION_DECLARATIONS }],
+      },
+    });
+
+    session.on('message', async (msg) => {
+      if (msg.serverContent?.modelTurn?.parts) {
+        for (const part of msg.serverContent.modelTurn.parts) {
+          if (part.text) {
+            responseEl.textContent = part.text;
+            setStatus('speaking', 'J.A.R.V.I.S SPEAKING');
+          }
+          if (part.functionCall) {
+            setStatus('thinking', `EXECUTING ${part.functionCall.name.toUpperCase().replace(/_/g,' ')}...`);
+            const result = await handleFunctionCall(part.functionCall.name, part.functionCall.args || {});
+            await session.sendToolResponse({
+              functionResponses: [{
+                id:       part.functionCall.id,
+                name:     part.functionCall.name,
+                response: result,
+              }]
+            });
+          }
+        }
+      }
+      if (msg.serverContent?.inputTranscription?.text) {
+        transcriptEl.textContent = msg.serverContent.inputTranscription.text;
+      }
+      if (msg.serverContent?.turnComplete) {
+        setStatus('listening', 'AWAITING YOUR COMMAND, SIR');
+      }
+    });
+
+    session.on('error', (err) => {
+      showError('SYSTEM ERROR: ' + err.message);
+      stopSession();
+    });
+
+    // Stream mic audio to Gemini (PCM 16kHz)
+    audioContext = new AudioContext({ sampleRate: 16000 });
+    const source = audioContext.createMediaStreamSource(mediaStream);
+    const processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+    processor.onaudioprocess = (e) => {
+      if (!session) return;
+      const float32 = e.inputBuffer.getChannelData(0);
+      const int16 = new Int16Array(float32.length);
+      for (let i = 0; i < float32.length; i++) {
+        int16[i] = Math.max(-32768, Math.min(32767, float32[i] * 32768));
+      }
+      session.sendRealtimeInput({
+        audio: { data: btoa(String.fromCharCode(...new Uint8Array(int16.buffer))), mimeType: 'audio/pcm;rate=16000' }
+      });
+    };
+
+    source.connect(processor);
+    processor.connect(audioContext.destination);
+
+    isListening = true;
+    setStatus('listening', 'AWAITING YOUR COMMAND, SIR');
+    arcIcon.textContent = '◉';
+
+  } catch (err) {
+    showError('INITIALISATION FAILED: ' + err.message);
+    setStatus('', 'SYSTEMS STANDBY');
+  }
+}
+
+function stopSession() {
+  if (session) { try { session.close(); } catch(e) {} session = null; }
+  if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
+  if (audioContext) { try { audioContext.close(); } catch(e) {} audioContext = null; }
+  isListening = false;
+  setStatus('', 'SYSTEMS STANDBY');
+  arcIcon.textContent = '⬡';
+}
+
+arcBtn.addEventListener('click', () => {
+  isListening ? stopSession() : startSession();
+});
+
+// Hide config panel if credentials already saved
+if (CONFIG.geminiApiKey && CONFIG.adminVoiceToken) {
+  document.getElementById('configPanel').style.display = 'none';
+}
+</script>
 </body>
 </html>
