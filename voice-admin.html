@@ -227,6 +227,32 @@
     box-shadow: 0 0 8px rgba(0,212,255,0.2);
   }
 
+  /* Language toggle */
+  .lang-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    border: 1px solid rgba(0,212,255,0.3);
+    border-radius: 20px;
+    overflow: hidden;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+  }
+  .lang-toggle button {
+    background: transparent;
+    border: none;
+    padding: 5px 14px;
+    cursor: pointer;
+    color: #1a5570;
+    text-transform: uppercase;
+    transition: all 0.15s;
+  }
+  .lang-toggle button.active {
+    background: rgba(0,212,255,0.15);
+    color: var(--blue);
+  }
+
   /* Config panel */
   .config-panel {
     width: 100%;
@@ -382,6 +408,11 @@
     <span class="channel-chip" data-channel="email">Email</span>
   </div>
 
+  <div class="lang-toggle" id="langToggle">
+    <button id="langEn" class="active">EN</button>
+    <button id="langTa">தமிழ்</button>
+  </div>
+
   <div class="readonly-banner" id="readonlyBanner">⚠ SAFETY LOCK ENGAGED — READ-ONLY MODE ACTIVE</div>
 
   <button class="safety-lock unlocked" id="safetyLockBtn">
@@ -464,6 +495,7 @@ let activeChannels    = ['whatsapp', 'push'];
 let isConnecting      = false;
 let reconnectAttempts = 0;
 let isReadOnly        = sessionStorage.getItem('jarvis_readonly') === 'true';
+let jarvisLang        = sessionStorage.getItem('jarvis_lang') || 'en';
 
 // ─── UI REFS ──────────────────────────────────────────────────────────────────
 const arcBtn       = document.getElementById('arcBtn');
@@ -863,6 +895,54 @@ CAPABILITIES: You have 96 admin functions covering orders, stores, items, delive
 Current date: ${new Date().toLocaleDateString('en-IN', { weekday:'long', day:'numeric', month:'long', year:'numeric' })}.
 Platform: Kukoo multivendor food & grocery delivery, staging environment.`;
 
+const SYSTEM_PROMPT_TA = `நீங்கள் J.A.R.V.I.S — Kukoo food delivery platform-இன் AI உதவியாளர். நீங்கள் தமிழில் பேசுகிறீர்கள்.
+
+முக்கியம் — TOOL பயன்பாடு கட்டாயம்:
+- உங்களுக்கு Kukoo-வின் live data எதுவும் தெரியாது. Orders, stores, customers, items, zones, campaigns — எதுவும் தெரியாது.
+- Orders, stores, items, delivery men, customers, zones, campaigns, payments, coupons பற்றிய எந்த கேள்விக்கும் — முதலில் சரியான function call செய்யுங்கள். எந்த விதிவிலக்கும் இல்லை.
+- Function results கிடைத்த பிறகு, அதை தமிழில் சுருக்கமாக சொல்லுங்கள்.
+
+பேச்சு விதிகள்:
+- எப்போதும் "ஐயா" என்று அழைக்கவும்
+- அமைதியாக, தெளிவாக, சுருக்கமாக பேசவும்
+- எண்களை இயல்பாக சொல்லுங்கள்: "பதினான்கு pending orders, ஐயா"
+- வெற்றி: "முடிந்தது, ஐயா."
+- தோல்வி: சுத்தமாக ஒப்புக்கொண்டு அடுத்த வழி சொல்லுங்கள்
+- Destructive actions-க்கு முதலில் உறுதிப்படுத்துங்கள்: "உறுதிப்படுத்துகிறேன், ஐயா — நீங்கள்..."
+- பதில்கள் 1-3 வாக்கியங்களில் மட்டுமே. சுருக்கமே அழகு.
+- "என்னால் முடியாது" என்று சொல்லாதீர்கள் — வழி கண்டுபிடியுங்கள்.
+
+திறன்கள்: Orders, stores, items, delivery men, customers, zones, campaigns, payments, notifications, coupons, campaign launcher உள்பட 96 admin functions உங்களிடம் உள்ளன.
+
+தேதி: ${new Date().toLocaleDateString('ta-IN', { weekday:'long', day:'numeric', month:'long', year:'numeric' })}.
+Platform: Kukoo multivendor food & grocery delivery.`;
+
+// ─── LANGUAGE TOGGLE ──────────────────────────────────────────────────────────
+const langEnBtn = document.getElementById('langEn');
+const langTaBtn = document.getElementById('langTa');
+
+function applyLangUI() {
+  langEnBtn.classList.toggle('active', jarvisLang === 'en');
+  langTaBtn.classList.toggle('active', jarvisLang === 'ta');
+}
+applyLangUI();
+
+langEnBtn.addEventListener('click', () => {
+  if (jarvisLang === 'en') return;
+  jarvisLang = 'en';
+  sessionStorage.setItem('jarvis_lang', 'en');
+  applyLangUI();
+  if (session) { stopSession(); startSession(); }
+});
+
+langTaBtn.addEventListener('click', () => {
+  if (jarvisLang === 'ta') return;
+  jarvisLang = 'ta';
+  sessionStorage.setItem('jarvis_lang', 'ta');
+  applyLangUI();
+  if (session) { stopSession(); startSession(); }
+});
+
 // ─── AUDIO PLAYBACK ───────────────────────────────────────────────────────────
 let playbackContext = null;
 let nextPlayTime    = 0;  // scheduled end-time of last queued chunk (AudioContext clock)
@@ -985,9 +1065,7 @@ async function startSession() {
           }, 500);
         },
         onmessage: async (msg) => {
-          // DEBUG: log full message structure
-          console.log('[JARVIS MSG]', JSON.stringify(msg).slice(0, 400));
-          // Handle model turn parts (audio, text, function calls)
+          // Handle model turn parts (audio, text)
           const parts = msg.serverContent?.modelTurn?.parts ?? [];
           for (const part of parts) {
             if (part.inlineData?.data && part.inlineData?.mimeType?.startsWith('audio/')) {
@@ -1003,22 +1081,20 @@ async function startSession() {
             }
           }
 
-          // msg.data fallback removed — inlineData path is active; both firing caused double audio
-
-          // Handle function calls separately — process in parallel, send all responses together
-          const functionCallParts = parts.filter(p => p.functionCall);
-          if (functionCallParts.length > 0) {
-            setStatus('thinking', `EXECUTING ${functionCallParts.map(p => p.functionCall.name.toUpperCase().replace(/_/g,' ')).join(' + ')}...`);
-            const responses = await Promise.all(functionCallParts.map(async (part) => {
+          // Function calls arrive in msg.toolCall.functionCalls (NOT in modelTurn parts)
+          const functionCalls = msg.toolCall?.functionCalls ?? [];
+          if (functionCalls.length > 0) {
+            setStatus('thinking', `EXECUTING ${functionCalls.map(fc => fc.name.toUpperCase().replace(/_/g,' ')).join(' + ')}...`);
+            const responses = await Promise.all(functionCalls.map(async (fc) => {
               let result;
               try {
-                result = await handleFunctionCall(part.functionCall.name, part.functionCall.args || {});
+                result = await handleFunctionCall(fc.name, fc.args || {});
               } catch(e) {
                 result = { error: e.message || 'API call failed' };
               }
               return {
-                id:       part.functionCall.id,
-                name:     part.functionCall.name,
+                id:       fc.id,
+                name:     fc.name,
                 response: { output: JSON.stringify(result) },
               };
             }));
@@ -1034,7 +1110,7 @@ async function startSession() {
 
           // Turn complete
           if (msg.serverContent?.turnComplete) {
-            if (functionCallParts.length === 0) {
+            if (functionCalls.length === 0) {
               waitForPlaybackThenUnmute();
             }
           }
@@ -1065,8 +1141,9 @@ async function startSession() {
       },
       config: {
         responseModalities: ['AUDIO'],
-        systemInstruction: { parts: [{ text: SYSTEM_PROMPT + `\n\nSAFETY LOCK: ${isReadOnly ? 'ENGAGED — read-only mode. No write operations permitted.' : 'DISENGAGED — full control mode.'}` }] },
+        systemInstruction: { parts: [{ text: (jarvisLang === 'ta' ? SYSTEM_PROMPT_TA : SYSTEM_PROMPT) + `\n\nSAFETY LOCK: ${isReadOnly ? 'ENGAGED — read-only mode. No write operations permitted.' : 'DISENGAGED — full control mode.'}` }] },
         tools: [{ functionDeclarations: FUNCTION_DECLARATIONS }],
+        speechConfig: { languageCode: jarvisLang === 'ta' ? 'ta-IN' : 'en-US' },
         inputAudioTranscription: {},
       },
     });
